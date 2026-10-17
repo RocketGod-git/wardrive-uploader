@@ -125,6 +125,15 @@ class UploaderCore:
     def poll_devices(self) -> detect.DetectResult:
         det = detect.detect()
         self._last_detect = det
+        # Ports for the mesh device picker, likely mesh boards first. The
+        # PortaPack is left out because the Mayhem reader owns its port.
+        self.state.serial_ports = [
+            {"port": d.port,
+             "label": (d.chip_label or d.description or d.manufacturer or "").strip(),
+             "is_mesh": bool(d.is_mesh_candidate)}
+            for d in sorted(det.serial_ports, key=lambda d: (not d.is_mesh_candidate, d.port))
+            if not d.is_portapack
+        ]
         port = detect.pick_mesh_port(self.cfg.get("mesh_port", "auto"), det)
         # Merge (not replace) so driver_ok survives a flaky prereq check.
         self.state.update_device("rtlsdr", present=det.rtlsdr_present, label=det.rtlsdr_label)

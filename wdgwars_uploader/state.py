@@ -87,6 +87,9 @@ class LiveState:
         # Config summary (never contains the key itself)
         self.config_summary: dict[str, Any] = {}
 
+        # Serial ports offered in the mesh device picker: {port, label, is_mesh}.
+        self.serial_ports: list[dict[str, Any]] = []
+
         # Activity log (kept longer so the dashboard panel scrolls through history)
         self._events: collections.deque = collections.deque(maxlen=200)
 
@@ -299,5 +302,6 @@ class LiveState:
                 "leaderboard_ts": self.leaderboard_ts,
                 "prereqs": self.prereqs,
                 "config": self.config_summary,
+                "serial_ports": self.serial_ports,
                 "events": list(self._events)[:100],
             }

@@ -179,7 +179,7 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
 .field input{width:100%}
 .switch{display:flex;align-items:center;gap:8px;font-size:12px}
 .devrow{display:flex;gap:8px;align-items:center;margin-bottom:6px}
-.devrow .d-port{width:130px}
+.devrow .d-port{min-width:200px;max-width:320px;flex:1}
 .devrow .d-rm{padding:5px 10px}
 .msg{font-size:12px;margin-left:8px}
 .msg.ok{color:var(--green)} .msg.err{color:var(--red)}
@@ -342,7 +342,7 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
           </div>
         </div>
         <div class="field" style="grid-column:1/-1">
-          <label>Mesh devices — MeshCore + Meshtastic, read &amp; uploaded together</label>
+          <label>Mesh devices — choose each radio's COM port (◆ = likely mesh board); MeshCore + Meshtastic read &amp; uploaded together</label>
           <div id="mesh-devs"></div>
           <button class="btn ghost" id="btn-adddev" type="button" style="margin-top:6px;padding:6px 12px">+ Add device</button>
         </div>
@@ -413,6 +413,14 @@ function render(s){
   $("#uptime").textContent=fmtDur(s.uptime);
   const st=s.stats||{}; $("#op-name").textContent=st.username||"—"; MY_ID=st.user_id||MY_ID;
 
+  // serial ports for the mesh device picker; fill the pickers once the first
+  // scan arrives, unless the user is editing them
+  if(s.serial_ports){ window._serialPorts = s.serial_ports;
+    if(window._devsInit && s.serial_ports.length && !window._portsFilled
+       && !$("#mesh-devs").contains(document.activeElement)){
+      window._portsFilled=true; renderMeshDevs(collectMeshDevs());
+    }
+  }
   // devices
   const sdr=s.devices.rtlsdr||{}, mesh=s.devices.mesh||{}, pp=s.devices.portapack||{};
   // Which radio is actually feeding aircraft right now ("rtlsdr" | "mayhem" | "").
@@ -649,7 +657,8 @@ $("#btn-upload").onclick=async()=>{
   }
   $("#btn-upload").disabled=false;
 };
-$("#btn-rescan").onclick=async()=>{ toast("Rescanning devices…"); await api("/api/rescan","POST"); poll(); };
+$("#btn-rescan").onclick=async()=>{ toast("Rescanning devices…"); await api("/api/rescan","POST"); await poll();
+  if(window._devsInit) renderMeshDevs(collectMeshDevs()); };
 $("#interval").onchange=async(e)=>{ await api("/api/interval","POST",{interval_hours:+e.target.value}); toast("Interval set to "+e.target.value+"h"); };
 $("#f-key").oninput=()=>{dirtyKey=true;};
 $("#btn-testkey").onclick=async()=>{
@@ -789,11 +798,27 @@ $("#modal").addEventListener('click',e=>{ if(e.target.id==='modal') closeModal()
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeModal(); });
 
 // ---- mesh device list editor ----
+function escHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+// Options for a mesh device's port picker. A saved port that is not plugged in
+// stays selectable; "auto" picks the first mesh port.
+function portOptions(sel){
+  const ports=window._serialPorts||[]; const seen=new Set(); let o='';
+  ports.forEach(p=>{ seen.add(p.port);
+    const lbl = p.label ? `${p.port} — ${p.label}` : p.port;
+    o+=`<option value="${escHtml(p.port)}"${p.port===sel?' selected':''}>${escHtml(lbl)}${p.is_mesh?' ◆':''}</option>`;
+  });
+  if(sel && sel!=='auto' && !seen.has(sel))
+    o+=`<option value="${escHtml(sel)}" selected>${escHtml(sel)} — (not connected)</option>`;
+  if(!ports.length && (!sel||sel==='auto'))
+    o+=`<option value="" disabled selected>scanning ports…</option>`;
+  o+=`<option value="auto"${sel==='auto'?' selected':''}>auto (first mesh port)</option>`;
+  return o;
+}
 function addDevRow(d){
-  d=d||{port:'auto',protocol:'meshcore',enabled:true};
+  d=d||{protocol:'meshcore',enabled:true};
   const row=document.createElement('div'); row.className='devrow';
   row.innerHTML=`<label class="switch" style="margin:0" title="enabled"><input type="checkbox" class="d-en" ${d.enabled!==false?'checked':''}></label>
-    <input type="text" class="d-port" value="${d.port||'auto'}" placeholder="auto / COM13">
+    <select class="d-port" title="COM port">${portOptions(d.port||'auto')}</select>
     <select class="d-proto"><option value="meshcore"${(d.protocol||'meshcore')==='meshcore'?' selected':''}>MeshCore</option><option value="meshtastic"${d.protocol==='meshtastic'?' selected':''}>Meshtastic</option></select>
     <button class="btn ghost d-rm" type="button" title="remove">✕</button>`;
   row.querySelector('.d-rm').onclick=()=>row.remove();
@@ -801,7 +826,7 @@ function addDevRow(d){
 }
 function renderMeshDevs(devs){
   $("#mesh-devs").innerHTML='';
-  (devs&&devs.length?devs:[{port:'auto',protocol:'meshcore',enabled:true}]).forEach(addDevRow);
+  (devs&&devs.length?devs:[{protocol:'meshcore',enabled:true}]).forEach(addDevRow);
 }
 function collectMeshDevs(){
   return [...document.querySelectorAll('#mesh-devs .devrow')].map(r=>({
@@ -809,7 +834,7 @@ function collectMeshDevs(){
     port:r.querySelector('.d-port').value.trim()||'auto',
     protocol:r.querySelector('.d-proto').value, baud:115200}));
 }
-$("#btn-adddev").onclick=()=>addDevRow({port:'auto',protocol:'meshtastic',enabled:true});
+$("#btn-adddev").onclick=()=>addDevRow({protocol:'meshtastic',enabled:true});
 
 poll(); setInterval(poll, 2500);
 </script>
