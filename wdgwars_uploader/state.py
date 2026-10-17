@@ -22,6 +22,10 @@ def _map_node(n: dict) -> dict:
             "lon": n.get("lon"), "network": n.get("network")}
 
 
+def _utc_day(ts: float) -> str:
+    return time.strftime("%Y-%m-%d", time.gmtime(ts))
+
+
 class LiveState:
     def __init__(self) -> None:
         self._lock = threading.RLock()
@@ -51,6 +55,12 @@ class LiveState:
         # upload.
         self._sent_aircraft: dict[str, float] = {}
         self._sent_mesh: dict[str, float] = {}
+        # Wardrift queue: aircraft are staged separately because Wardrift credits
+        # once per aircraft per UTC observation day. _wardrift_sent maps hex to
+        # the observation day last delivered.
+        self.wardrift_enabled = False
+        self._wardrift_acc: dict[str, dict] = {}
+        self._wardrift_sent: dict[str, str] = {}
         self._SENT_TTL = 24 * 3600.0                  # re-confirm at most once/day
         self._SENT_CAP = 100000
         self.aircraft_seen_ts: float = 0.0
@@ -119,10 +129,14 @@ class LiveState:
                 if not h:
                     continue
                 self._seen_aircraft.add(h)
+                if (self.wardrift_enabled and isinstance(r.get("_obs_ts"), (int, float))
+                        and self._wardrift_sent.get(h) != _utc_day(r["_obs_ts"])):
+                    self._wardrift_acc[h] = r
                 if self._recently_sent(self._sent_aircraft, h):
                     continue   # already uploaded and still confirmed — don't re-stage
                 self._aircraft_acc[h] = r
             self._cap(self._aircraft_acc)
+            self._cap(self._wardrift_acc)
         self.persist()
 
     # Exactly the fields WDGWars accepts for a mesh node — anything else on a
@@ -157,11 +171,33 @@ class LiveState:
     def pending(self) -> dict[str, int]:
         """Count staged for the next upload (accumulated since last upload)."""
         with self._lock:
-            return {"aircraft": len(self._aircraft_acc), "mesh": len(self._mesh_acc)}
+            return {"aircraft": len(self._aircraft_acc), "mesh": len(self._mesh_acc),
+                    "wardrift": len(self._wardrift_acc)}
 
     def acc_aircraft_raw(self) -> list[dict]:
         with self._lock:
             return list(self._aircraft_acc.values())
+
+    def acc_wardrift_raw(self) -> list[dict]:
+        with self._lock:
+            return list(self._wardrift_acc.values())
+
+    def mark_wardrift_uploaded(self, records) -> None:
+        """Drop delivered aircraft from the Wardrift queue and remember their
+        observation day, so the same aircraft is not re-sent that day."""
+        with self._lock:
+            for r in records:
+                h = (r.get("hex") or "").upper()
+                if not h:
+                    continue
+                if isinstance(r.get("_obs_ts"), (int, float)):
+                    self._wardrift_sent[h] = _utc_day(r["_obs_ts"])
+                if self._wardrift_acc.get(h) is r:
+                    self._wardrift_acc.pop(h, None)
+            cutoff = _utc_day(time.time() - 3 * 86400)
+            for h in [h for h, d in self._wardrift_sent.items() if d < cutoff]:
+                self._wardrift_sent.pop(h, None)
+        self.persist(force=True)
 
     def acc_mesh_nodes(self) -> list[dict]:
         with self._lock:
@@ -225,6 +261,11 @@ class LiveState:
                 self._sent_mesh = {k: float(v) for k, v in sm.items() if isinstance(v, (int, float))}
             self._prune_sent(self._sent_aircraft)
             self._prune_sent(self._sent_mesh)
+            wd, ws = data.get("wardrift", {}), data.get("wardrift_sent", {})
+            if isinstance(wd, dict):
+                self._wardrift_acc = {k: v for k, v in wd.items() if isinstance(v, dict)}
+            if isinstance(ws, dict):
+                self._wardrift_sent = {k: v for k, v in ws.items() if isinstance(v, str)}
         except (OSError, ValueError):
             pass
 
@@ -237,7 +278,9 @@ class LiveState:
                 return
             self._persist_ts = now
             payload = json.dumps({"aircraft": self._aircraft_acc, "mesh": self._mesh_acc,
-                                   "sent_aircraft": self._sent_aircraft, "sent_mesh": self._sent_mesh})
+                                   "sent_aircraft": self._sent_aircraft, "sent_mesh": self._sent_mesh,
+                                   "wardrift": self._wardrift_acc,
+                                   "wardrift_sent": self._wardrift_sent})
         try:
             path = self._queue_path()
             fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
@@ -267,7 +310,8 @@ class LiveState:
                 "now": time.time(),
                 "uptime": time.time() - self.started,
                 "devices": self.devices,
-                "pending": {"aircraft": len(self._aircraft_acc), "mesh": len(self._mesh_acc)},
+                "pending": {"aircraft": len(self._aircraft_acc), "mesh": len(self._mesh_acc),
+                            "wardrift": len(self._wardrift_acc)},
                 "live": {"aircraft": len(self._aircraft_live), "mesh": len(self._mesh_live),
                          "meshtastic": len(mt_live), "meshcore": len(mc_live),
                          # how many of the heard nodes actually have a GPS fix (the

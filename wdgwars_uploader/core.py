@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from . import adsb, detect, mayhem, mesh, mesh_capture, prereq, watchdog
+from . import wardrift
 from .config import Config, config_dir
 from .state import LiveState
 from .uploader import WDGWarsClient
@@ -28,16 +29,18 @@ class CycleReport:
     started: float = field(default_factory=time.time)
     adsb: str = "skipped"
     mesh: str = "skipped"
+    wardrift: str = "skipped"
     key_ok: bool = False
     aircraft_sent: int = 0
     mesh_sent: int = 0
     errors: list[str] = field(default_factory=list)
 
     def line(self) -> str:
-        return f"ADS-B: {self.adsb} | Mesh: {self.mesh}"
+        return f"ADS-B: {self.adsb} | Mesh: {self.mesh} | Wardrift: {self.wardrift}"
 
     def as_dict(self) -> dict[str, Any]:
         return {"ts": self.started, "adsb": self.adsb, "mesh": self.mesh,
+                "wardrift": self.wardrift,
                 "aircraft_sent": self.aircraft_sent, "mesh_sent": self.mesh_sent,
                 "errors": self.errors}
 
@@ -66,6 +69,31 @@ def _aircraft_items(obj: dict[str, Any] | None) -> list[dict]:
             "messages": a.get("messages"),
         })
     return out
+
+
+def _snapshot_time(obj: dict[str, Any] | None) -> float:
+    """The decoder's clock for this snapshot; ``seen`` ages are relative to it."""
+    now = time.time()
+    try:
+        snap = float((obj or {}).get("now"))
+    except (TypeError, ValueError):
+        return now
+    return snap if 0 < snap <= now + 300 else now
+
+
+def _stamp(a: dict[str, Any], snap: float) -> dict[str, Any]:
+    """Copy of a decoder record with absolute observation times, so a batch
+    sent hours later still carries when each aircraft was actually heard."""
+    r = dict(a)
+    try:
+        r["_obs_ts"] = snap - max(0.0, float(a["seen"]))
+    except (KeyError, TypeError, ValueError):
+        r["_obs_ts"] = snap
+    try:
+        r["_pos_ts"] = snap - max(0.0, float(a["seen_pos"]))
+    except (KeyError, TypeError, ValueError):
+        r.pop("_pos_ts", None)
+    return r
 
 
 class UploaderCore:
@@ -98,6 +126,7 @@ class UploaderCore:
         c = self.cfg.as_dict()
         self.state.config_summary = {
             "has_api_key": bool((c.get("api_key") or "").strip()),
+            "has_wardrift_key": bool((c.get("wardrift_api_key") or "").strip()),
             "interval_hours": c.get("interval_hours", 4),
             "adsb_enabled": c.get("adsb_enabled", True),
             "mesh_enabled": c.get("mesh_enabled", True),
@@ -113,6 +142,7 @@ class UploaderCore:
             "start_on_boot": c.get("start_on_boot", False),
         }
         self.state.interval_hours = int(c.get("interval_hours", 4))
+        self.state.wardrift_enabled = bool((c.get("wardrift_api_key") or "").strip())
 
     # -- checks ------------------------------------------------------------
     def check_key(self) -> tuple[bool, str]:
@@ -174,7 +204,8 @@ class UploaderCore:
         # entirely, so a bad fix cannot persist and break a later upload's span
         # check.
         raw_pos = adsb.filter_plausible_positions(raw_pos, home=adsb.receiver_home(cfg))
-        self.state.update_aircraft(display, raw_pos)
+        snap = _snapshot_time(obj)
+        self.state.update_aircraft(display, [_stamp(a, snap) for a in raw_pos])
         return len(display)
 
     def poll_mesh(self) -> int:
@@ -240,13 +271,39 @@ class UploaderCore:
             self._last_report = rep
         return rep
 
+    def _upload_wardrift(self, key: str, rep: CycleReport) -> None:
+        """Send aircraft staged for Wardrift (independent of the WDGWars key)."""
+        try:
+            self.poll_aircraft()
+            recs = self.state.acc_wardrift_raw()
+            if not recs:
+                rep.wardrift = "0 aircraft logged"
+                return
+            res = wardrift.WardriftClient(key).upload_aircraft(recs)
+            if res.sent:
+                self.state.mark_wardrift_uploaded(res.sent)
+            rep.wardrift = res.summary()
+            if res.error:
+                rep.errors.append(f"wardrift: {res.error}")
+                self.state.event(f"Wardrift upload failed: {res.summary()}")
+            else:
+                self.state.event(f"Wardrift uploaded: {res.summary()}")
+        except Exception as e:
+            rep.wardrift = f"error: {e}"
+            rep.errors.append(f"wardrift: {e}")
+            log.exception("Wardrift upload failed")
+
     def _run_cycle_inner(self, rep: CycleReport) -> CycleReport:
         cfg = self.cfg.as_dict()
+        wd_key = (cfg.get("wardrift_api_key") or "").strip()
+        if wd_key and cfg.get("adsb_enabled", True):
+            self._upload_wardrift(wd_key, rep)
+
         api_key = (cfg.get("api_key") or "").strip()
         if not api_key:
             rep.adsb = rep.mesh = "no API key"
             rep.errors.append("no API key configured")
-            self.state.event("Upload skipped — no API key")
+            self.state.event("WDGWars upload skipped — no API key")
             return rep
 
         client = self.client()

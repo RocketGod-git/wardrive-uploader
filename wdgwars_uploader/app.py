@@ -143,7 +143,7 @@ class UploaderApp:
 
     def update_config(self, values: dict) -> None:
         allowed = {
-            "api_key", "interval_hours", "adsb_enabled", "adsb_json_url", "adsb_json_file",
+            "api_key", "wardrift_api_key", "interval_hours", "adsb_enabled", "adsb_json_url", "adsb_json_file",
             "adsb_source", "mayhem_port", "mayhem_log_path", "mayhem_poll_secs",
             "mayhem_autostart_app", "adsb_home_lat", "adsb_home_lon",
             "dump1090_exe", "dump1090_args", "dump1090_autostart", "mesh_enabled",

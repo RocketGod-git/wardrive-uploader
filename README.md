@@ -8,6 +8,7 @@ It runs in the tray, watches whatever radios are plugged in, and uploads on a sc
 
 - **ADS-B** from an [RTL-SDR](https://www.rtl-sdr.com/) decoded on the PC by [dump1090](https://github.com/gvanem/Dump1090), or from a [PortaPack running Mayhem](https://github.com/portapack-mayhem/mayhem-firmware), which decodes on-device and hands the log back over its USB console.
 - **Mesh** from [Meshtastic](https://meshtastic.org/) and [MeshCore](https://meshcore.co.uk/) radios at the same time, over serial or BLE, read from the live packet stream rather than from the node list.
+- **Wardrift** (optional): aircraft can also be sent to [Wardrift](https://wardrift.net) with a character API key.
 - **Dashboard** on loopback: live feed, counters, a map, WDGWars stats and leaderboard, and the prerequisite checks.
 
 ## 🛠️ Notes
@@ -17,7 +18,7 @@ It runs in the tray, watches whatever radios are plugged in, and uploads on a sc
 - The bundled dump1090 build takes the receiver position and tuner gain from its own `dump1090.cfg`, not the command line. Left alone it ships `homepos = -1,-1`, which puts every single-frame position off the coast of West Africa.
 - The map is [OpenFreeMap](https://openfreemap.org/) — no key, no tile account.
 - Aircraft details come from [adsbdb](https://www.adsbdb.com/) and photos from [Planespotters](https://www.planespotters.net/).
-- The API key lives in `%APPDATA%\WDGWarsUploader\config.json`; it is never returned by the dashboard API or written to the log.
+- The API keys live in `%APPDATA%\WDGWarsUploader\config.json`; they are never returned by the dashboard API or written to the log.
 
 ## 📦 Requirements
 

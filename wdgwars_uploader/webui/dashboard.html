@@ -331,6 +331,10 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
           <span class="msg" id="key-msg"></span>
         </div>
         <div class="field">
+          <label>Wardrift API key (optional) — aircraft also upload to <a href="https://wardrift.net" target="_blank" rel="noopener">Wardrift ↗</a></label>
+          <input type="password" id="f-wdkey" placeholder="optional — paste wdk_ key…" autocomplete="off">
+        </div>
+        <div class="field">
           <label>ADS-B aircraft.json URL (running dump1090/tar1090)</label>
           <input type="text" id="f-adsburl" placeholder="http://localhost:8080/data/aircraft.json">
         </div>
@@ -512,6 +516,7 @@ function render(s){
   fillIfIdle("#f-hops", c.mesh_hop_limit);
   if(!window._devsInit){ renderMeshDevs(c.mesh_devices||[]); window._devsInit=true; }
   if(!dirtyKey && document.activeElement!==$("#f-key")) $("#f-key").placeholder = c.has_api_key ? "•••••••• key set — type to change" : "paste key…";
+  if(document.activeElement!==$("#f-wdkey")) $("#f-wdkey").placeholder = c.has_wardrift_key ? "•••••••• key set — type to change" : "optional — paste wdk_ key…";
 }
 
 function fillIfIdle(sel,val){const el=$(sel); if(document.activeElement!==el) el.value=val;}
@@ -679,9 +684,10 @@ $("#btn-save").onclick=async()=>{
     start_on_boot:$("#f-boot").checked,
   };
   const key=$("#f-key").value.trim(); if(key) cfg.api_key=key;
+  const wdk=$("#f-wdkey").value.trim(); if(wdk) cfg.wardrift_api_key=wdk;
   const m=$("#save-msg"); m.textContent="saving…"; m.className="msg";
   const r=await api("/api/config","POST",cfg);
-  if(r.ok){m.textContent="✓ saved";m.className="msg ok";dirtyKey=false;$("#f-key").value="";toast("Settings saved");
+  if(r.ok){m.textContent="✓ saved";m.className="msg ok";dirtyKey=false;$("#f-key").value="";$("#f-wdkey").value="";toast("Settings saved");
     await api("/api/refresh-stats","POST"); poll();}
   else{m.textContent="✗ "+(r.error||"error");m.className="msg err";}
 };

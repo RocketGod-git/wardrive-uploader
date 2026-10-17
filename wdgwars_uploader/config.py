@@ -1,7 +1,7 @@
 """Configuration storage.
 
-Config lives in ``%APPDATA%\\WDGWarsUploader\\config.json``. The API key is the
-only secret; it is stored in plain text in the roaming profile, at the same trust
+Config lives in ``%APPDATA%\\WDGWarsUploader\\config.json``. The API keys are the
+only secrets; they are stored in plain text in the roaming profile, at the same trust
 level as the rest of the account, and is never returned by the dashboard API.
 """
 
@@ -20,6 +20,7 @@ INTERVAL_CHOICES_HOURS = [1, 4, 12, 24]
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "api_key": "",
+    "wardrift_api_key": "",   # optional; aircraft also go to wardrift.net
     "interval_hours": 4,
     # ADS-B --------------------------------------------------------------------
     "adsb_enabled": True,

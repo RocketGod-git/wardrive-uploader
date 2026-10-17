@@ -5,5 +5,5 @@ PortaPack/Mayhem, reads nodes from MeshCore and Meshtastic radios, and uploads
 both to wdgwars.pl.
 """
 
-__version__ = "0.4.2"
+__version__ = "0.4.3"
 APP_NAME = "WDGWars Uploader"
