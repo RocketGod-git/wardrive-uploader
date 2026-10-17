@@ -15,7 +15,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from . import adsb, detect, mayhem, mesh, mesh_capture, prereq, watchdog
+from . import adsb, airspy, detect, mayhem, mesh, mesh_capture, prereq, watchdog
 from .config import Config, config_dir
 from .state import LiveState
 from .uploader import WDGWarsClient
@@ -110,6 +110,9 @@ class UploaderCore:
             "adsb_active_source": adsb.active_source(),
             "mayhem_port": c.get("mayhem_port", "auto"),
             "dump1090_gain": c.get("dump1090_gain"),
+            "airspy_adsb_args": c.get("airspy_adsb_args", ""),
+            "airspy_gain": c.get("airspy_gain", "auto"),
+            "airspy_bias_tee": c.get("airspy_bias_tee", False),
             "start_on_boot": c.get("start_on_boot", False),
         }
         self.state.interval_hours = int(c.get("interval_hours", 4))
@@ -135,21 +138,28 @@ class UploaderCore:
             if not d.is_portapack
         ]
         port = detect.pick_mesh_port(self.cfg.get("mesh_port", "auto"), det)
-        # Merge (not replace) so driver_ok survives a flaky prereq check.
-        self.state.update_device("rtlsdr", present=det.rtlsdr_present, label=det.rtlsdr_label)
+        cfg = self.cfg.as_dict()
+        self.state.update_device("rtlsdr", present=det.rtlsdr_present, label=det.rtlsdr_label,
+                                 service=det.rtlsdr_service, driver_ok=det.rtlsdr_driver_ok)
+        self.state.update_device("airspy", present=det.airspy_present, label=det.airspy_label,
+                                 serial=det.airspy_serial, service=det.airspy_service,
+                                 driver_ok=det.airspy_driver_ok, **self._airspy_decoder_fields(cfg))
         self.state.update_device("portapack", present=det.portapack_present,
                                  port=det.portapack_port, label=det.portapack_label)
         self.state.update_device("mesh", present=det.mesh_present, port=port or "",
                                  transport=self.cfg.get("mesh_transport", "serial"))
         try:
-            self.state.prereqs = {"checks": prereq.check_all(det, self.cfg.as_dict())}
-            for c in self.state.prereqs["checks"]:
-                if c["name"] == "RTL-SDR driver":
-                    self.state.update_device("rtlsdr", driver_ok=c["ok"])
+            self.state.prereqs = {"checks": prereq.check_all(det, cfg)}
         except Exception:
             log.exception("prereq check failed")
         self._push_config_summary()
         return det
+
+    @staticmethod
+    def _airspy_decoder_fields(cfg: dict[str, Any]) -> dict[str, Any]:
+        st = airspy.status(cfg)
+        return {"decoder_installed": st["installed"], "decoder_running": st["running"],
+                "connected": st["connected"], "error": st["error"]}
 
     def poll_aircraft(self) -> int:
         if not self.cfg.get("adsb_enabled", True):
@@ -165,6 +175,13 @@ class UploaderCore:
                                      device=st.get("device", ""), error=st.get("error", ""),
                                      aircraft=int(st.get("aircraft", 0) or 0),
                                      stalled_for=st.get("stalled_for"))
+        if self._last_detect is not None and self._last_detect.airspy_present:
+            self.state.update_device("airspy", **self._airspy_decoder_fields(cfg))
+        if self._last_detect is not None:
+            try:
+                self.state.prereqs = {"checks": prereq.check_all(self._last_detect, cfg)}
+            except Exception:
+                log.debug("prereq refresh failed", exc_info=True)
         # obj is not None means a decoder is serving (even with an empty sky).
         self.state.adsb_source_ok = obj is not None
         display = _aircraft_items(obj)
@@ -273,11 +290,19 @@ class UploaderCore:
                                                       home=adsb.receiver_home(cfg))
                 n = len(raw)
                 if n == 0:
-                    if adsb.active_source() == "mayhem":
+                    src = adsb.active_source()
+                    ast = airspy.status(cfg) if src == "airspy" else {}
+                    if src == "mayhem":
                         st = mayhem.status() or {}
                         rep.adsb = ("0 aircraft logged" if st.get("connected")
                                     else "PortaPack not reading" +
                                          (f": {st['error']}" if st.get("error") else ""))
+                    elif src == "airspy" and not ast.get("connected"):
+                        rep.adsb = ("ADS-B SPY not installed" if not ast.get("installed")
+                                    else "ADS-B SPY not feeding dump1090" +
+                                         (f": {ast['error']}" if ast.get("error") else ""))
+                    elif not src:
+                        rep.adsb = "no ADS-B radio detected"
                     else:
                         url = (cfg.get("adsb_json_url") or "").strip()
                         rep.adsb = ("no aircraft source reachable"

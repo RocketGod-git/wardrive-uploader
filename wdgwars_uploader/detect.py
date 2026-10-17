@@ -1,19 +1,6 @@
-"""USB device detection for the ADS-B radios and the mesh serial devices.
-
-* Serial detection (MeshCore/Meshtastic boards, and the PortaPack console) uses
-  pyserial, which enumerates COM ports with their VID/PID - reliable and
-  dependency-light.
-* An RTL-SDR is *not* a serial device, so it is detected by querying Windows PnP
-  through PowerShell for the Realtek DVB VID/PID. This reads the same data as
-  ``Get-PnpDevice`` and needs no native driver access.
-
-Two ADS-B radios are possible: an RTL-SDR (decoded on the PC by dump1090) and a
-PortaPack/HackRF running Mayhem (decoded on-device and read back over its CDC
-console - see :mod:`wdgwars_uploader.mayhem`).
-"""
-
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -32,8 +19,13 @@ RTLSDR_IDS = {
     (0x0BDA, 0x2838),  # RTL2832U (most RTL-SDRs, incl. Blog V3/V4)
     (0x0BDA, 0x2832),  # older RTL2832U
     (0x0BDA, 0x2839),
-    (0x1D50, 0x60A1),  # osmocom rtl-sdr
 }
+
+AIRSPY_IDS = {
+    (0x1D50, 0x60A1),
+}
+
+WINUSB_SERVICES = {"winusb", "libusbk", "libusb0", "winusbcompat"}
 
 # --- MeshCore / Heltec serial bridges ---------------------------------------
 # VID/PIDs of the USB-serial chips these boards use. A match here is a *strong*
@@ -74,10 +66,47 @@ class SerialDevice:
 
 
 @dataclass
+class UsbDevice:
+    vid: int
+    pid: int
+    instance_id: str
+    bus_desc: str
+    friendly: str
+    service: str
+    dev_class: str
+
+    @property
+    def driver_ok(self) -> bool:
+        return self.service.strip().lower() in WINUSB_SERVICES
+
+    @property
+    def serial(self) -> str:
+        tail = self.instance_id.rsplit("\\", 1)[-1]
+        return tail.split("SN:", 1)[1] if "SN:" in tail else tail
+
+
+@dataclass
 class DetectResult:
     rtlsdr_present: bool = False
     rtlsdr_label: str = ""
+    rtlsdr_service: str = ""
+    airspy_present: bool = False
+    airspy_label: str = ""
+    airspy_serial: str = ""
+    airspy_service: str = ""
     serial_ports: list[SerialDevice] = field(default_factory=list)
+
+    @property
+    def rtlsdr_driver_ok(self) -> bool | None:
+        if not self.rtlsdr_present:
+            return None
+        return self.rtlsdr_service.strip().lower() in WINUSB_SERVICES
+
+    @property
+    def airspy_driver_ok(self) -> bool | None:
+        if not self.airspy_present:
+            return None
+        return self.airspy_service.strip().lower() in WINUSB_SERVICES
 
     @property
     def portapack(self) -> SerialDevice | None:
@@ -100,7 +129,7 @@ class DetectResult:
     @property
     def adsb_radio_present(self) -> bool:
         """Any radio this app can get ADS-B from."""
-        return self.rtlsdr_present or self.portapack_present
+        return self.rtlsdr_present or self.airspy_present or self.portapack_present
 
     @property
     def mesh_candidates(self) -> list[SerialDevice]:
@@ -163,42 +192,69 @@ def _rtlsdr_label(reported: str) -> str:
         return "RTL-SDR Blog V4"
     if "rtl2838" in low or "rtl2832" in low:
         return "RTL2832U (V3 / generic)"
-    return reported
+    return reported or "RTL-SDR"
 
 
-def _rtlsdr_present() -> tuple[bool, str]:
-    """Detect an RTL-SDR via Windows PnP. Returns (present, label)."""
-    if sys.platform != "win32":
-        return False, ""
-    # Build a regex of VID_xxxx&PID_xxxx patterns for the known IDs.
-    patterns = "|".join(f"VID_{v:04X}&PID_{p:04X}" for v, p in RTLSDR_IDS)
-    # Prefer the bus-reported product string (from the dongle) over FriendlyName
-    # (Windows' possibly stale cached name) - see _rtlsdr_label.
+def _airspy_label(reported: str) -> str:
+    return "Airspy" if "airspy" in reported.lower() or not reported else reported
+
+
+_VIDPID = re.compile(r"VID_([0-9A-Fa-f]{4})&PID_([0-9A-Fa-f]{4})")
+
+
+def _scan_usb(ids: set[tuple[int, int]]) -> list[UsbDevice]:
+    if sys.platform != "win32" or not ids:
+        return []
+    patterns = "|".join(f"VID_{v:04X}&PID_{p:04X}" for v, p in sorted(ids))
     ps = (
-        "$d = Get-PnpDevice -PresentOnly | "
-        f"Where-Object {{ $_.InstanceId -match '{patterns}' }} | Select-Object -First 1; "
-        "if ($d) { $b = (Get-PnpDeviceProperty -InstanceId $d.InstanceId "
+        "Get-PnpDevice -PresentOnly | "
+        f"Where-Object {{ $_.InstanceId -match '{patterns}' }} | ForEach-Object {{ "
+        "$b = (Get-PnpDeviceProperty -InstanceId $_.InstanceId "
         "-KeyName 'DEVPKEY_Device_BusReportedDeviceDesc' -ErrorAction SilentlyContinue).Data; "
-        "if ($b) { $b } else { $d.FriendlyName } }"
+        "$s = (Get-PnpDeviceProperty -InstanceId $_.InstanceId "
+        "-KeyName 'DEVPKEY_Device_Service' -ErrorAction SilentlyContinue).Data; "
+        "\"$($_.InstanceId)|$b|$($_.FriendlyName)|$s|$($_.Class)\" }"
     )
     try:
         res = subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
-            capture_output=True, text=True, timeout=15,
-            creationflags=_NO_WINDOW,
+            capture_output=True, text=True, timeout=20, creationflags=_NO_WINDOW,
         )
-        label = (res.stdout or "").strip().splitlines()
-        if label and label[0].strip():
-            return True, _rtlsdr_label(label[0].strip())
+        text = res.stdout or ""
     except Exception:
-        pass
-    return False, ""
+        return []
+    out: list[UsbDevice] = []
+    for line in text.splitlines():
+        parts = line.strip().split("|", 4)
+        if len(parts) < 5:
+            continue
+        inst, bus, friendly, service, cls = (p.strip() for p in parts)
+        if "&MI_" in inst.upper():
+            continue
+        m = _VIDPID.search(inst)
+        if not m:
+            continue
+        vid, pid = int(m.group(1), 16), int(m.group(2), 16)
+        if (vid, pid) not in ids:
+            continue
+        out.append(UsbDevice(vid=vid, pid=pid, instance_id=inst, bus_desc=bus,
+                             friendly=friendly, service=service, dev_class=cls))
+    return out
 
 
 def detect() -> DetectResult:
     r = DetectResult()
     r.serial_ports = _list_serial()
-    r.rtlsdr_present, r.rtlsdr_label = _rtlsdr_present()
+    for d in _scan_usb(RTLSDR_IDS | AIRSPY_IDS):
+        if (d.vid, d.pid) in RTLSDR_IDS and not r.rtlsdr_present:
+            r.rtlsdr_present = True
+            r.rtlsdr_label = _rtlsdr_label(d.bus_desc or d.friendly)
+            r.rtlsdr_service = d.service
+        elif (d.vid, d.pid) in AIRSPY_IDS and not r.airspy_present:
+            r.airspy_present = True
+            r.airspy_label = _airspy_label(d.bus_desc or d.friendly)
+            r.airspy_serial = d.serial
+            r.airspy_service = d.service
     return r
 
 
@@ -226,7 +282,8 @@ def pick_mesh_port(configured: str, result: DetectResult | None = None) -> str |
 
 if __name__ == "__main__":  # manual smoke test
     d = detect()
-    print(f"RTL-SDR present: {d.rtlsdr_present} ({d.rtlsdr_label})")
+    print(f"RTL-SDR present: {d.rtlsdr_present} ({d.rtlsdr_label}; driver {d.rtlsdr_service or '-'})")
+    print(f"Airspy present: {d.airspy_present} ({d.airspy_label} SN {d.airspy_serial}; driver {d.airspy_service or '-'})")
     print(f"PortaPack present: {d.portapack_present} ({d.portapack_port})")
     for s in d.serial_ports:
         tag = "  <-- MESH" if s.is_mesh_candidate else ""

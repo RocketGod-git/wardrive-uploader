@@ -150,6 +150,9 @@ class _Handler(BaseHTTPRequestHandler):
             elif path == "/api/install-dump1090":
                 self.app.install_dump1090_async()
                 self._send_json({"ok": True})
+            elif path == "/api/install-airspy-adsb":
+                self.app.install_airspy_adsb_async()
+                self._send_json({"ok": True})
             elif path == "/api/quit":
                 self._send_json({"ok": True})
                 threading.Thread(target=self.app.quit, daemon=True).start()

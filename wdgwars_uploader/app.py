@@ -23,7 +23,7 @@ from pathlib import Path
 import pystray
 from PIL import Image, ImageDraw
 
-from . import APP_NAME, __version__, adsb, autostart, mayhem, watchdog
+from . import APP_NAME, __version__, adsb, airspy, autostart, mayhem, watchdog
 from .config import Config, INTERVAL_CHOICES_HOURS, config_dir
 from .core import UploaderCore
 from .logutil import setup_logging
@@ -100,12 +100,14 @@ class UploaderApp:
         p = self.state.pending()
         bits = []
         if d:
+            sdr = []
             if d.rtlsdr_present:
-                bits.append("RTL-SDR OK")
-            elif d.portapack_present:
-                bits.append("PortaPack OK")
-            else:
-                bits.append("no SDR")
+                sdr.append("RTL-SDR OK")
+            if d.airspy_present:
+                sdr.append("Airspy OK")
+            if not sdr:
+                sdr.append("PortaPack OK" if d.portapack_present else "no SDR")
+            bits.extend(sdr)
             bits.append("Mesh OK" if d.mesh_present else "no Mesh")
         bits.append(f"queued {p['aircraft']}+{p['mesh']}")
         return " · ".join(bits)
@@ -149,7 +151,8 @@ class UploaderApp:
             "dump1090_exe", "dump1090_args", "dump1090_autostart", "mesh_enabled",
             "mesh_transport", "mesh_port", "mesh_baud", "mesh_ble_address",
             "mesh_advert_minutes", "mesh_devices", "mesh_hop_limit",
-            "dump1090_gain", "start_on_boot", "upload_on_start",
+            "dump1090_gain", "airspy_adsb_exe", "airspy_adsb_args", "airspy_gain",
+            "airspy_bias_tee", "start_on_boot", "upload_on_start",
         }
         clean = {k: v for k, v in values.items() if k in allowed}
         key_changed = "api_key" in clean and clean["api_key"] != self.cfg.get("api_key")
@@ -170,6 +173,17 @@ class UploaderApp:
             except Exception as e:
                 self.state.event(f"dump1090 install failed: {e}")
                 log.exception("dump1090 install failed")
+        threading.Thread(target=work, daemon=True).start()
+
+    def install_airspy_adsb_async(self) -> None:
+        def work():
+            try:
+                exe = airspy.install_airspy_adsb(progress=lambda m: self.state.event(f"ADS-B SPY: {m}"))
+                self.state.event(f"ADS-B SPY ready: {exe}")
+                self.core.poll_devices()
+            except Exception as e:
+                self.state.event(f"ADS-B SPY install failed: {e}")
+                log.exception("ADS-B SPY install failed")
         threading.Thread(target=work, daemon=True).start()
 
     def open_dashboard(self) -> None:
@@ -209,7 +223,7 @@ class UploaderApp:
         except Exception:
             pass
         for stopper in (self.scheduler.stop, self.poller.stop, self.core.capture.stop,
-                        self.server.stop, adsb.stop_dump1090, mayhem.stop):
+                        self.server.stop, adsb.stop_dump1090, airspy.stop, mayhem.stop):
             try:
                 stopper()
             except Exception:

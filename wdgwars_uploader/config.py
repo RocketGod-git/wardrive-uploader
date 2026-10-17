@@ -23,10 +23,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "interval_hours": 4,
     # ADS-B --------------------------------------------------------------------
     "adsb_enabled": True,
-    # Which radio to read aircraft from:
-    #   "auto"    - RTL-SDR if present, else a PortaPack/Mayhem console
-    #   "rtlsdr"  - dump1090 + RTL-SDR only
-    #   "mayhem"  - PortaPack/HackRF (Mayhem) console only
     "adsb_source": "auto",
     # PortaPack (Mayhem) source. "" / "auto" = the detected PortaPack console.
     "mayhem_port": "auto",
@@ -52,6 +48,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "dump1090_args": "--net",
     # If the aircraft URL isn't answering, auto-launch an installed dump1090.
     "dump1090_autostart": True,
+    "airspy_adsb_exe": "",
+    "airspy_adsb_args": "-e 20 -w 5",
+    "airspy_gain": "auto",
+    "airspy_bias_tee": False,
     # RTL-SDR tuner gain in dB, written into the bundled dump1090.cfg on every
     # launch (0-49.6; the R820T2 steps to the nearest supported value).
     # None = leave the cfg's own value alone.

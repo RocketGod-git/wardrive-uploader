@@ -239,7 +239,7 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
     <div class="card col-8">
       <h2>Hardware</h2>
       <div class="devs">
-        <div class="dev"><div class="dot" id="d-sdr"></div><div><div class="n">RTL-SDR</div><div class="d" id="d-sdr-t">scanning…</div></div></div>
+        <div class="dev"><div class="dot" id="d-sdr"></div><div><div class="n" id="d-sdr-n">SDR</div><div class="d" id="d-sdr-t">scanning…</div></div></div>
         <div class="dev"><div class="dot" id="d-pp"></div><div><div class="n">PortaPack</div><div class="d" id="d-pp-t">scanning…</div></div></div>
         <div class="dev"><div class="dot" id="d-mesh"></div><div><div class="n" id="d-mesh-n">Mesh</div><div class="d" id="d-mesh-t">scanning…</div></div></div>
         <div class="dev"><div class="dot on"></div><div><div class="n">Uploader</div><div class="d" id="d-up">idle</div></div></div>
@@ -337,7 +337,7 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
         <div class="field">
           <label>Sources</label>
           <div class="row">
-            <label class="switch"><input type="checkbox" id="f-adsb"> ADS-B (RTL-SDR or PortaPack)</label>
+            <label class="switch"><input type="checkbox" id="f-adsb"> ADS-B (RTL-SDR, Airspy or PortaPack)</label>
             <label class="switch"><input type="checkbox" id="f-mesh"> Mesh</label>
           </div>
         </div>
@@ -351,8 +351,8 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
           <input type="number" id="f-advert" min="0" max="1440" step="5" placeholder="60">
         </div>
         <div class="field">
-          <label>Meshtastic hop limit (1–7, higher = more reach)</label>
-          <input type="number" id="f-hops" min="1" max="7" step="1" placeholder="7">
+          <label>Meshtastic hop limit written to the radio (1–7, default 7; 0 = leave the radio's own setting alone)</label>
+          <input type="number" id="f-hops" min="0" max="7" step="1" placeholder="7">
         </div>
         <div class="field">
           <label>Startup</label>
@@ -422,17 +422,26 @@ function render(s){
     }
   }
   // devices
-  const sdr=s.devices.rtlsdr||{}, mesh=s.devices.mesh||{}, pp=s.devices.portapack||{};
-  // Which radio is actually feeding aircraft right now ("rtlsdr" | "mayhem" | "").
+  const sdr=s.devices.rtlsdr||{}, air=s.devices.airspy||{}, mesh=s.devices.mesh||{}, pp=s.devices.portapack||{};
   const adsbActive = (s.config&&s.config.adsb_active_source)||"";
-  // Red means "you need to do something". A missing RTL-SDR while the PortaPack
-  // feeds aircraft is not that - show it neutral.
-  setDot("#d-sdr", sdr.present ? (sdr.driver_ok===false ? "warn" : "on")
-                               : (adsbActive==="mayhem" ? "" : "off"));
-  $("#d-sdr-t").textContent = sdr.present
-      ? (sdr.driver_ok===false ? (sdr.label+" — needs WinUSB driver") : sdr.label)
-      // Not having an RTL-SDR is not a fault when the PortaPack is the source.
-      : (adsbActive==="mayhem" ? "not detected — using PortaPack" : "not detected");
+  const sdrNames=[];
+  if(sdr.present) sdrNames.push(sdr.label||'RTL-SDR');
+  if(air.present) sdrNames.push((air.label||'Airspy')+(air.serial?(' '+air.serial.slice(-6)):''));
+  $("#d-sdr-n").textContent = sdrNames.length ? sdrNames.join(' + ') : 'SDR (RTL-SDR / Airspy)';
+  let sdrState='off', sdrText='not detected';
+  if(sdr.present||air.present){
+    const probs=[];
+    if(sdr.present && sdr.driver_ok===false) probs.push('RTL-SDR needs WinUSB driver');
+    if(air.present){
+      if(air.driver_ok===false) probs.push('Airspy needs WinUSB driver');
+      else if(!air.decoder_installed) probs.push('ADS-B SPY not installed — see Prerequisites');
+      else if(!air.connected) probs.push(air.decoder_running ? 'ADS-B SPY starting…' : 'ADS-B SPY not running');
+    }
+    if(probs.length){ sdrState='warn'; sdrText=probs.join(' · '); }
+    else { sdrState='on'; sdrText = s.adsb_source_ok===true ? 'decoding' : 'starting decoder…'; }
+  } else if(adsbActive==="mayhem"){ sdrState=''; sdrText='not detected — using PortaPack'; }
+  setDot("#d-sdr", sdrState);
+  $("#d-sdr-t").textContent = sdrText;
   // A connected PortaPack whose log stopped growing is NOT healthy: the console
   // still answers, so "connected" alone would show green while nothing is fed.
   const ppStall = (pp.stalled_for!=null && pp.stalled_for > 300) ? Math.round(pp.stalled_for/60) : 0;
@@ -440,11 +449,12 @@ function render(s){
   // RTL-SDR feeds aircraft is on standby: it never connects, so without this it
   // sat on an amber "starting…" forever and looked broken.
   const ppActive = adsbActive === "mayhem";
-  setDot("#d-pp", !pp.present ? (adsbActive==="rtlsdr" ? "" : "off")
+  const sdrActive = adsbActive==="rtlsdr" || adsbActive==="airspy";
+  setDot("#d-pp", !pp.present ? (sdrActive ? "" : "off")
                 : !ppActive   ? ""
                 : (pp.connected && !ppStall) ? "on" : "warn");
   $("#d-pp-t").textContent = !pp.present ? "not detected"
-      : !ppActive ? `${pp.port} · standby (RTL-SDR in use)`
+      : !ppActive ? `${pp.port} · standby (${adsbActive==="airspy"?"Airspy":"RTL-SDR"} in use)`
       : pp.connected
           ? (ppStall ? `${pp.port} — no data for ${ppStall}m (stalled)`
                      : `${pp.port} · ${pp.aircraft||0} aircraft`)
@@ -611,8 +621,15 @@ function renderPrereqs(p){
       <div><div class="s">${c.name} <span class="m">— ${c.status}</span></div>
         ${c.detail?`<div class="m">${c.detail}</div>`:''}
         ${!c.ok&&c.fix?`<div class="fix">▶ ${c.fix} ${c.url?`<a href="${c.url}" target="_blank">${c.url}</a>`:''}</div>`:''}
+        ${!c.ok&&c.action?`<button class="btn ghost chk-action" type="button" data-ep="${c.action.endpoint}" style="margin-top:6px;padding:6px 12px">${c.action.label}</button>`:''}
       </div></div>`).join('');
 }
+$("#prereqs").addEventListener('click', async e=>{
+  const b=e.target.closest('button.chk-action'); if(!b) return;
+  b.disabled=true; toast(b.textContent+'…');
+  try{ await api(b.dataset.ep,"POST",{}); }catch(err){ toast('request failed'); }
+  setTimeout(poll,1500);
+});
 
 function renderLeaderboard(lb){
   const body=$("#lb-body");
@@ -675,7 +692,7 @@ $("#btn-save").onclick=async()=>{
     adsb_json_url:$("#f-adsburl").value.trim(),
     mesh_devices:collectMeshDevs(),
     mesh_advert_minutes:parseInt($("#f-advert").value)||0,
-    mesh_hop_limit:Math.min(7,Math.max(1,parseInt($("#f-hops").value)||7)),
+    mesh_hop_limit:(v=>isNaN(v)?7:Math.min(7,Math.max(0,v)))(parseInt($("#f-hops").value)),
     start_on_boot:$("#f-boot").checked,
   };
   const key=$("#f-key").value.trim(); if(key) cfg.api_key=key;

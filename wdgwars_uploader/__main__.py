@@ -20,7 +20,8 @@ from .logutil import setup_logging
 def _cmd_detect() -> int:
     from . import detect
     d = detect.detect()
-    print(f"RTL-SDR : {'present - ' + d.rtlsdr_label if d.rtlsdr_present else 'not found'}")
+    print(f"RTL-SDR : {'present - ' + d.rtlsdr_label + ' (driver: ' + (d.rtlsdr_service or 'none') + ')' if d.rtlsdr_present else 'not found'}")
+    print(f"Airspy  : {'present - ' + d.airspy_label + ' SN ' + d.airspy_serial + ' (driver: ' + (d.airspy_service or 'none') + ')' if d.airspy_present else 'not found'}")
     print(f"PortaPack: {'present on ' + d.portapack_port if d.portapack_present else 'not found'}")
     print("Serial ports:")
     if not d.serial_ports:

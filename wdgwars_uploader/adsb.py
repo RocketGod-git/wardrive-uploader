@@ -1,21 +1,3 @@
-"""ADS-B source: produce a dump1090-shape ``aircraft.json`` object from whichever
-radio is available.
-
-``adsb_source`` selects between two radios that yield the same shape, so nothing
-downstream depends on which one is in use:
-
-* ``rtlsdr`` - decoded on the PC by dump1090 (this module).
-* ``mayhem`` - a PortaPack/HackRF decodes on-device and its log is read back
-  over the CDC console (:mod:`wdgwars_uploader.mayhem`).
-
-For the RTL-SDR path this module finds, installs on demand and launches the
-all-in-one **gvanem/Dump1090** Windows build. That build is HTTP-serve-only (no
-``--write-json``), so aircraft are polled from ``/data/aircraft.json`` on :8080
-rather than read from a file. It also requires the RTL-SDR to be bound to the
-WinUSB driver (see :mod:`wdgwars_uploader.prereq`); without it dump1090 runs,
-reports no device, and the aircraft list stays empty.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -43,8 +25,10 @@ DUMP1090_ZIP_URL = "https://github.com/gvanem/Dump1090/releases/download/v1.0.0/
 # executed, so it is verified before extraction.
 DUMP1090_ZIP_SHA256 = "75610a54c89584337faec624cc052744fa58c471bb8665cd9cad5ea005ced236"
 DEFAULT_JSON_URL = "http://localhost:8080/data/aircraft.json"
+DUMP1090_RAW_IN_PORT = 30001
 
 _proc: subprocess.Popen | None = None
+_launched_args: list[str] | None = None
 _last_launch_attempt: float = 0.0
 _RELAUNCH_BACKOFF = 60.0
 _launch_lock = threading.Lock()   # serialize the launch decision across threads
@@ -125,19 +109,20 @@ def _kill_stray_decoders() -> None:
     _proc = None
 
 
-def launch_dump1090(exe: str, args: str = "--net") -> bool:
-    """Launch dump1090 headless. With --net it serves aircraft.json on :8080."""
-    global _proc
+def launch_dump1090(exe: str, args: str | list[str] = "--net") -> bool:
+    global _proc, _launched_args
     if not exe or not Path(exe).exists():
         return False
     if is_running():
         return True
-    cmd = [exe, *args.split()]
+    arg_list = args.split() if isinstance(args, str) else list(args)
+    cmd = [exe, *arg_list]
     try:
         log.info("launching dump1090: %s", " ".join(cmd))
         _proc = subprocess.Popen(cmd, cwd=str(Path(exe).parent), creationflags=_NO_WINDOW,
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                  stdin=subprocess.DEVNULL)
+        _launched_args = arg_list
         return True
     except Exception as e:
         log.warning("dump1090 launch failed: %s", e)
@@ -149,13 +134,19 @@ def stop_dump1090() -> None:
     outside it. Orphans from a hard-killed prior run are handled at launch time by
     ensure_decoder, which only clears strays when nothing is serving.
     """
-    global _proc
+    global _proc, _launched_args
     if is_running():
         try:
             _proc.terminate()
         except Exception:
             pass
     _proc = None
+    _launched_args = None
+
+
+def _dump1090_args(cfg_args: Any, open_rtlsdr: bool) -> list[str]:
+    toks = [t for t in str(cfg_args or "--net").split() if t not in ("--net", "--net-only")]
+    return [*toks, "--net" if open_rtlsdr else "--net-only"]
 
 
 # A single ground receiver only sees line-of-sight traffic, and WDGWars
@@ -342,19 +333,19 @@ _active_source: str = ""
 
 
 def resolve_source(cfg: dict[str, Any], det: Any = None) -> tuple[str, str]:
-    """Pick the ADS-B radio. Returns ``(source, port)`` where source is
-    ``"rtlsdr"``, ``"mayhem"`` or ``""`` (none available), and ``port`` is the
-    PortaPack console port when source is ``"mayhem"``."""
     from . import detect as _detect
     choice = str(cfg.get("adsb_source") or "auto").strip().lower()
     if choice == "rtlsdr":
         return "rtlsdr", ""
+    if choice == "airspy":
+        return "airspy", ""
     if choice == "mayhem":
         return "mayhem", _detect.pick_portapack_port(cfg.get("mayhem_port", "auto"), det) or ""
-    # auto: prefer a dedicated RTL-SDR receiver; fall back to a PortaPack.
     det = det or _detect.detect()
     if det.rtlsdr_present:
         return "rtlsdr", ""
+    if det.airspy_present:
+        return "airspy", ""
     port = _detect.pick_portapack_port(cfg.get("mayhem_port", "auto"), det) or ""
     return ("mayhem", port) if port else ("", "")
 
@@ -365,32 +356,51 @@ def active_source() -> str:
 
 def ensure_decoder(cfg: dict[str, Any], driver_ok: bool | None = None,
                    det: Any = None) -> bool:
-    """Non-blocking: if configured and the RTL-SDR is on WinUSB, launch an
-    installed dump1090 (with backoff) so it starts serving the JSON. Returns
-    True if a decoder process is (now) running. Never downloads and never waits
-    on the URL — callers just read the URL on their normal cadence.
-
-    ``driver_ok=False`` skips the launch entirely: without the WinUSB driver
-    dump1090 finds no device and exits immediately, so spawning it is pointless.
-    """
     global _last_launch_attempt, _active_source
+    from . import airspy, mayhem
     if not cfg.get("adsb_enabled", True):
         _active_source = ""
+        airspy.stop()
         return is_running()
 
-    from . import mayhem
+    from . import detect as _detect
+    det = det or _detect.detect()
     source, port = resolve_source(cfg, det)
     _active_source = source
     if source == "mayhem":
         # Never leave a dump1090 running while a different radio is being read: it
         # would sit there holding a device and serving a stale JSON.
         stop_dump1090()
+        airspy.stop()
         return mayhem.ensure_reader(port, cfg)
     mayhem.stop()
+    if not source:
+        airspy.stop()
+        if is_running():
+            log.info("no ADS-B radio detected; stopping the dump1090 this app launched")
+            stop_dump1090()
+        return False
 
-    if not cfg.get("dump1090_autostart", True):
-        return is_running()
+    choice = str(cfg.get("adsb_source") or "auto").strip().lower()
+    open_rtlsdr = bool(det.rtlsdr_present) and choice != "airspy"
+    run_airspy = bool(det.airspy_present) and choice != "rtlsdr"
+    dump_ok = _ensure_dump1090(cfg, open_rtlsdr) if cfg.get("dump1090_autostart", True) else is_running()
+    if run_airspy:
+        airspy.ensure_decoder(cfg, DUMP1090_RAW_IN_PORT)
+    else:
+        airspy.stop()
+    return dump_ok
+
+
+def _ensure_dump1090(cfg: dict[str, Any], open_rtlsdr: bool) -> bool:
+    global _last_launch_attempt
     url = (cfg.get("adsb_json_url") or DEFAULT_JSON_URL).strip()
+    wanted = _dump1090_args(cfg.get("dump1090_args", "--net"), open_rtlsdr)
+    if is_running() and _launched_args is not None and _launched_args != wanted:
+        log.info("dump1090 mode change '%s' -> '%s'; relaunching",
+                 " ".join(_launched_args), " ".join(wanted))
+        stop_dump1090()
+        _last_launch_attempt = 0.0
     # Something already serving aircraft (this decoder, an orphan, or a
     # separately started dump1090) is reused. A duplicate would fight for the
     # RTL-SDR and port 8080.
@@ -415,7 +425,7 @@ def ensure_decoder(cfg: dict[str, Any], driver_ok: bool | None = None,
         _kill_stray_decoders()   # clear any stuck/orphan instance first
         _prune_decoder_logs(Path(exe).parent)
         _apply_decoder_cfg(exe, receiver_home(cfg), cfg.get("dump1090_gain"))
-        return launch_dump1090(exe, cfg.get("dump1090_args", "--net"))
+        return launch_dump1090(exe, wanted)
 
 
 def collect(cfg: dict[str, Any]) -> dict[str, Any] | None:
