@@ -256,6 +256,10 @@ def _apply_decoder_cfg(exe: str, home: tuple[float, float] | None, gain: Any = N
     if re.search(r"(?m)^cpr-trace\s*=\s*true", new):
         new = re.sub(r"(?m)^(cpr-trace\s*=\s*)[^\s#]+", lambda m: f"{m.group(1)}false", new)
         changes.append("cpr-trace off")
+    # Single-bit CRC repair recovers frames that arrive with one bad bit; keep it on.
+    if re.search(r"(?m)^error-correct1\s*=\s*false", new):
+        new = re.sub(r"(?m)^(error-correct1\s*=\s*)[^\s#]+", lambda m: f"{m.group(1)}true", new)
+        changes.append("error-correct1 on")
     if new != text:
         try:
             cfg.write_text(new, encoding="latin-1")
