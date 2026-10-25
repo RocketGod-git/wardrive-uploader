@@ -31,6 +31,7 @@ from typing import Any
 import requests
 
 from . import __version__
+from .config import upload_file_name
 
 BASE = "https://wdgwars.pl"
 UA = f"wdgwars-mesh-adsb-uploader/{__version__} (+https://github.com/RocketGod-git/wdgwars-mesh-adsb-uploader)"
@@ -58,7 +59,8 @@ class UploadResult:
 
 
 class WDGWarsClient:
-    def __init__(self, api_key: str, timeout: int = 60) -> None:
+    def __init__(self, api_key: str, timeout: int = 60, label: str = "") -> None:
+        self.label = label
         self.api_key = (api_key or "").strip()
         self.timeout = timeout
         self.session = requests.Session()
@@ -108,7 +110,7 @@ class WDGWarsClient:
         with gzip.GzipFile(fileobj=buf, mode="wb", filename="aircraft.json") as gz:
             gz.write(raw)
         buf.seek(0)
-        files = {"file": ("aircraft.json.gz", buf, "application/gzip")}
+        files = {"file": (upload_file_name(self.label, "aircraft.json.gz"), buf, "application/gzip")}
         try:
             resp = self.session.post(f"{BASE}/api/upload-csv", files=files, timeout=self.timeout)
             data = _safe_json(resp)
@@ -279,7 +281,7 @@ class WDGWarsClient:
     # -- generic CSV (WiGLE / mesh CSV) -----------------------------------
     def upload_csv_bytes(self, data_bytes: bytes, filename: str = "data.csv") -> UploadResult:
         """POST an already-formatted CSV/LOG (or its .gz) to /api/upload-csv."""
-        files = {"file": (filename, io.BytesIO(data_bytes), "text/csv")}
+        files = {"file": (upload_file_name(self.label, filename), io.BytesIO(data_bytes), "text/csv")}
         try:
             resp = self.session.post(f"{BASE}/api/upload-csv", files=files, timeout=self.timeout)
             data = _safe_json(resp)

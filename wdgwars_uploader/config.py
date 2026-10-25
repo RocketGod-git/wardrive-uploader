@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import socket
 import tempfile
 import threading
 from pathlib import Path
@@ -20,7 +22,10 @@ INTERVAL_CHOICES_HOURS = [1, 4, 12, 24]
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "api_key": "",
-    "wardrift_api_key": "",   # optional; aircraft also go to wardrift.net
+    "wardrift_api_key": "",   # optional; aircraft and mesh nodes also go to wardrift.net
+    # Name of this PC in uploaded file names, so uploads from several machines
+    # can be told apart. Blank = the computer name.
+    "upload_device_label": "",
     "interval_hours": 4,
     # ADS-B --------------------------------------------------------------------
     "adsb_enabled": True,
@@ -85,6 +90,20 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "upload_on_start": True,
     "last_upload_ts": 0,
 }
+
+
+def device_label(custom: Any = "") -> str:
+    """The upload label: the user-set name, else the computer name. Letters and
+    digits only, at most 24 characters."""
+    def clean(v: Any) -> str:
+        return re.sub(r"[^A-Za-z0-9]", "", str(v or ""))[:24]
+    return (clean(custom) or clean(os.environ.get("COMPUTERNAME"))
+            or clean(socket.gethostname()) or "PC")
+
+
+def upload_file_name(label: str, name: str) -> str:
+    """``aircraft.json.gz`` -> ``WDGWarsUploader-<label>-aircraft.json.gz``."""
+    return f"WDGWarsUploader-{device_label(label)}-{name}"
 
 
 def config_dir() -> Path:

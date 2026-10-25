@@ -50,6 +50,9 @@ def _cmd_once(core: UploaderCore) -> int:
     rep = core.run_cycle()
     print("ADS-B:", rep.adsb)
     print("Mesh :", rep.mesh)
+    if rep.wardrift != "skipped" or rep.wardrift_mesh != "skipped":
+        print("Wardrift      :", rep.wardrift)
+        print("Wardrift mesh :", rep.wardrift_mesh)
     if rep.errors:
         print("Errors:")
         for e in rep.errors:

@@ -8,7 +8,7 @@ It runs in the tray, watches whatever radios are plugged in, and uploads on a sc
 
 - **ADS-B** from an [RTL-SDR](https://www.rtl-sdr.com/) decoded on the PC by [dump1090](https://github.com/gvanem/Dump1090), or from a [PortaPack running Mayhem](https://github.com/portapack-mayhem/mayhem-firmware), which decodes on-device and hands the log back over its USB console.
 - **Mesh** from [Meshtastic](https://meshtastic.org/) and [MeshCore](https://meshcore.co.uk/) radios at the same time, over serial or BLE, read from the live packet stream rather than from the node list.
-- **Wardrift** (optional): aircraft can also be sent to [Wardrift](https://wardrift.net) with a character API key.
+- **Wardrift** (optional): aircraft and mesh nodes can also be sent to [Wardrift](https://wardrift.net) with a character API key, along with the battery, uptime and packet counters of each connected mesh radio.
 - **Dashboard** on loopback: live feed, counters, a map, WDGWars stats and leaderboard, and the prerequisite checks.
 
 ## 🛠️ Notes

@@ -27,6 +27,7 @@ import asyncio
 import logging
 import threading
 import time
+import uuid
 from typing import Any
 
 from . import mesh
@@ -46,6 +47,9 @@ _NO_RESET_PORTS: set[str] = set()
 # radio to start answering a config request before sending another.
 _NODEDB_WAIT = 180.0
 _REQUEST_RETRY_SECS = 4.0
+
+# Seconds between reads of a MeshCore companion's own battery and counters.
+_RADIO_SAMPLE_SECS = 300
 
 # Ports whose DTR/RTS lines reset the attached board. These are opened with both
 # lines held low:
@@ -133,6 +137,8 @@ class MeshStore:
                 if self._is_default_name(v, new.get("node_id", "")) and not \
                    self._is_default_name(out.get("name", ""), out.get("node_id", "")):
                     continue
+            if k == "heard_ts" and (out.get(k) or 0) >= v:
+                continue   # a re-sweep of the radio's table carries an older stamp
             if k == "tele" and isinstance(v, dict):
                 merged = dict(out.get("tele") or {})
                 merged.update({kk: vv for kk, vv in v.items() if vv is not None})
@@ -160,6 +166,16 @@ class MeshStore:
                 for k in sorted(self._nodes, key=lambda x: self._nodes[x].get("_ts", 0))[
                         : len(self._nodes) - self._cap]:
                     self._nodes.pop(k, None)
+
+    def touch(self, node_id: str, **fields) -> bool:
+        """Update a known node in place. False if the node is not in the store."""
+        with self._lock:
+            cur = self._nodes.get(node_id)
+            if cur is None:
+                return False
+            cur.update(fields)
+            cur["_ts"] = time.time()
+            return True
 
     def snapshot(self, recent_secs: float | None = None) -> list[dict]:
         """All heard nodes, most-recently-heard first. If ``recent_secs`` is set,
@@ -211,6 +227,10 @@ class MeshtasticWorker(threading.Thread):
         self._stop = threading.Event()
         self.connected = False
         self.heard = 0
+        self.radio: dict | None = None    # latest reading of the radio itself
+        self._session_id = ""
+        self._metrics_at: float | None = None
+        self._stats_at: float | None = None
 
     def stop(self) -> None:
         self._stop.set()
@@ -229,6 +249,51 @@ class MeshtasticWorker(threading.Thread):
             d = mesh.meshtastic_node_to_display(nid, node)
             if d:
                 self.store.put(d)
+
+    def _sample_radio(self, iface) -> None:
+        """Record the radio's own DeviceMetrics and LocalStats for the Wardrift
+        mesh upload. Both arrive as telemetry packets from the radio itself."""
+        try:
+            me = iface.getMyNodeInfo() or {}
+        except Exception:  # noqa: BLE001
+            return
+        user = me.get("user") or {}
+        num = me.get("num")
+        nid = user.get("id") or (f"!{num:08x}" if isinstance(num, int) else "")
+        node = mesh.meshtastic_node_to_display(nid, me)
+        if not node or len(node["node_id"]) != 8:
+            return
+        now = time.time()
+        dm = me.get("deviceMetrics") or {}
+        ls = me.get("localStats") or {}
+        level = dm.get("batteryLevel")
+        counters: dict[str, Any] = {}
+        if ls:
+            # Protobuf-to-dict leaves out zero values, so a missing counter is 0.
+            counters = {"num_packets_tx": ls.get("numPacketsTx", 0),
+                        "num_packets_rx": ls.get("numPacketsRx", 0),
+                        "num_tx_relay": ls.get("numTxRelay", 0),
+                        "num_tx_relay_canceled": ls.get("numTxRelayCanceled", 0)}
+        uptime = ls.get("uptimeSeconds") if ls else dm.get("uptimeSeconds")
+        md = getattr(iface, "metadata", None)
+        self.radio = {
+            "protocol": "meshtastic",
+            "transport": "usb_serial",
+            "session": self._session_id,
+            "node": node,
+            "observed_at": now,
+            "firmware_version": getattr(md, "firmware_version", "") or None,
+            "uptime_seconds": uptime,
+            "uptime_at": (self._stats_at if ls else self._metrics_at) or now,
+            # 101 means external power, not a battery reading.
+            "battery_level": level if isinstance(level, int) and 0 <= level <= 100 else None,
+            "voltage": dm.get("voltage"),
+            "health_at": (self._metrics_at or now) if dm else None,
+            "counters": counters,
+            "counters_at": (self._stats_at or now) if ls else None,
+            "profile": ("meshtastic-localstats-v1" if ls else
+                        "meshtastic-devicemetrics-v1" if dm else "meshtastic-basic-v1"),
+        }
 
     def _open_iface(self, deadline: float = _NODEDB_WAIT + 30.0):
         """Open the SerialInterface in a sub-thread with a hard deadline - the
@@ -295,6 +360,8 @@ class MeshtasticWorker(threading.Thread):
 
         iface = self._open_iface()
         self.connected = True
+        self._session_id = uuid.uuid4().hex
+        self._metrics_at = self._stats_at = None
         log.info("meshtastic capture connected on %s", self.port)
         if self.hop_limit:
             try:
@@ -310,20 +377,30 @@ class MeshtasticWorker(threading.Thread):
                 if rec:
                     d = mesh.meshtastic_node_to_display(frm, rec)
                     if d:
+                        d["heard_ts"] = time.time()
                         self.store.put(d)
                         self.heard += 1
+                tel = (packet.get("decoded") or {}).get("telemetry") or {}
+                my_num = getattr(getattr(interface, "myInfo", None), "my_node_num", None)
+                if tel and my_num is not None and packet.get("from") == my_num:
+                    if "deviceMetrics" in tel:
+                        self._metrics_at = time.time()
+                    if "localStats" in tel:
+                        self._stats_at = time.time()
             except Exception:
                 pass
 
         sub = pub.subscribe(on_recv, "meshtastic.receive")
         try:
             self._capture_all(iface)          # seed from the device's current DB
+            self._sample_radio(iface)
             last_advert = time.time()
             while not self._stop.is_set():
                 self._stop.wait(15)
                 if self._stop.is_set():
                     break
                 self._capture_all(iface)      # re-sweep the merged DB (cheap, in-memory)
+                self._sample_radio(iface)
                 if self.advert_minutes and (time.time() - last_advert) >= self.advert_minutes * 60:
                     mesh._meshtastic_announce(iface)
                     last_advert = time.time()
@@ -355,6 +432,10 @@ class MeshCoreWorker(threading.Thread):
         self._stop = threading.Event()
         self.connected = False
         self.heard = 0
+        self.radio: dict | None = None    # latest reading of the companion itself
+        self._session_id = ""
+        self._unsupported: set[str] = set()
+        self._firmware: str | None = None
 
     def stop(self) -> None:
         self._stop.set()
@@ -368,11 +449,73 @@ class MeshCoreWorker(threading.Thread):
             self.connected = False
             self._stop.wait(15)
 
-    def _capture_contact(self, contact: Any) -> None:
+    def _capture_contact(self, contact: Any, heard: float | None = None) -> None:
         d = mesh.contact_to_node(contact)
         if d:
+            if heard:
+                d["heard_ts"] = heard
             self.store.put(d)
             self.heard += 1
+
+    async def _sample_radio(self, mc, EventType) -> None:
+        """Read the companion's own battery, uptime and packet counters for the
+        Wardrift mesh upload. A command the firmware answers with an error (older
+        firmware has no GET_STATS) is not sent again this session."""
+        async def ask(name: str, fn):
+            if name in self._unsupported:
+                return None
+            try:
+                ev = await fn()
+            except Exception:  # noqa: BLE001
+                return None
+            payload = getattr(ev, "payload", None)
+            if ev is None or ev.type == EventType.ERROR:
+                if isinstance(payload, dict) and "error_code" in payload:
+                    self._unsupported.add(name)
+                return None
+            return (payload, time.time()) if isinstance(payload, dict) else None
+
+        if self._firmware is None and "device" not in self._unsupported:
+            dev = await ask("device", mc.commands.send_device_query)
+            if dev:
+                self._firmware = (dev[0].get("ver") or dev[0].get("fw_build") or "").strip()
+        bat = await ask("battery", mc.commands.get_bat)
+        core = await ask("core", mc.commands.get_stats_core)
+        pkts = await ask("packets", mc.commands.get_stats_packets)
+
+        info = dict(getattr(mc, "self_info", None) or {})
+        node = mesh.contact_to_node({
+            "public_key": info.get("public_key"), "type": info.get("adv_type"),
+            "adv_name": info.get("name"), "adv_lat": info.get("adv_lat"),
+            "adv_lon": info.get("adv_lon")})
+        if not node or len(node.get("public_key") or "") != 64:
+            return
+        mv, health_at = None, None
+        if core and core[0].get("battery_mv"):
+            mv, health_at = core[0]["battery_mv"], core[1]
+        elif bat and bat[0].get("level"):
+            mv, health_at = bat[0]["level"], bat[1]
+        counters: dict[str, Any] = {}
+        if pkts:
+            counters = {"num_packets_tx": pkts[0].get("sent"),
+                        "num_packets_rx": pkts[0].get("recv")}
+        self.radio = {
+            "protocol": "meshcore",
+            "transport": "ble" if self.transport == "ble" else "usb_serial",
+            "session": self._session_id,
+            "node": node,
+            "observed_at": time.time(),
+            "firmware_version": self._firmware or None,
+            "uptime_seconds": core[0].get("uptime_secs") if core else None,
+            "uptime_at": core[1] if core else None,
+            "battery_level": None,     # MeshCore reports millivolts only
+            "voltage": round(mv / 1000.0, 3) if mv else None,
+            "health_at": health_at,
+            "counters": counters,
+            "counters_at": pkts[1] if pkts else None,
+            "profile": ("meshcore-stats-v1" if core or pkts else
+                        "meshcore-battery-v1" if mv else "meshcore-basic-v1"),
+        }
 
     async def _session(self) -> None:
         from meshcore import MeshCore, EventType
@@ -405,23 +548,41 @@ class MeshCoreWorker(threading.Thread):
                             pass
             raise RuntimeError("could not connect to a MeshCore companion")
         self.connected = True
+        self._session_id = uuid.uuid4().hex
+        self._unsupported = set()
+        self._firmware = None
         log.info("meshcore capture connected (%s)", self.port or self.ble_address)
 
-        def on_event(ev):
-            # ADVERTISEMENT / NEW_CONTACT payloads carry the contact record.
-            self._capture_contact(getattr(ev, "payload", None))
+        def on_advert(ev):
+            # The ADVERTISEMENT push carries only the public key. A known node is
+            # marked heard without resetting its stored type and name to defaults.
+            payload = getattr(ev, "payload", None) or {}
+            pub = str(payload.get("public_key") or "").lower()
+            now = time.time()
+            if pub and self.store.touch(pub[:16], heard_ts=now, first_seen=mesh._fmt_ts(now)):
+                self.heard += 1
+            else:
+                self._capture_contact(payload, heard=now)
 
-        mc.subscribe(EventType.ADVERTISEMENT, on_event)
-        mc.subscribe(EventType.NEW_CONTACT, on_event)
+        def on_contact(ev):
+            # NEW_CONTACT carries the full contact record.
+            self._capture_contact(getattr(ev, "payload", None), heard=time.time())
+
+        mc.subscribe(EventType.ADVERTISEMENT, on_advert)
+        mc.subscribe(EventType.NEW_CONTACT, on_contact)
         try:
             # seed from the current contact table
             res = await mc.commands.get_contacts()
             payload = getattr(res, "payload", res)
             for c in (payload.values() if isinstance(payload, dict) else (payload or [])):
                 self._capture_contact(c)
-            last_advert = time.time()
+            await self._sample_radio(mc, EventType)
+            last_advert = last_sample = time.time()
             while not self._stop.is_set():
                 await asyncio.sleep(3)
+                if time.time() - last_sample >= _RADIO_SAMPLE_SECS:
+                    await self._sample_radio(mc, EventType)
+                    last_sample = time.time()
                 # drain any adverts the firmware refused to store (table full)
                 for key in list(getattr(mc, "pending_contacts", {}) or {}):
                     c = mc.pop_pending_contact(key)
@@ -552,3 +713,10 @@ class MeshCaptureService:
 
     def snapshot(self, recent_secs: float | None = None) -> list[dict]:
         return self.store.snapshot(recent_secs)
+
+    def local_radios(self) -> list[dict]:
+        """Latest reading of each connected radio's own health and counters."""
+        with self._lock:
+            workers = list(self._workers.values())
+        return [dict(w.radio) for w in workers
+                if getattr(w, "connected", False) and getattr(w, "radio", None)]

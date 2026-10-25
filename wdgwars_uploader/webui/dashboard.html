@@ -269,7 +269,7 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
         </div>
         <div class="counter mag" id="c-mesh">
           <div class="num" id="n-mesh">0</div><div class="lbl">Mesh</div>
-          <div class="sess" id="s-mesh">0 queued</div><div class="burst" id="b-mesh"></div>
+          <div class="sess" id="s-mesh">0 queued</div><div class="sess" id="s-mesh-wd" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div><div class="burst" id="b-mesh"></div>
         </div>
       </div>
     </div>
@@ -331,8 +331,12 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
           <span class="msg" id="key-msg"></span>
         </div>
         <div class="field">
-          <label>Wardrift API key (optional) — aircraft also upload to <a href="https://wardrift.net" target="_blank" rel="noopener">Wardrift ↗</a></label>
+          <label>Wardrift API key (optional) — aircraft and mesh nodes also upload to <a href="https://wardrift.net" target="_blank" rel="noopener">Wardrift ↗</a></label>
           <input type="password" id="f-wdkey" placeholder="optional — paste wdk_ key…" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>Upload device name — goes in uploaded file names so each PC's uploads can be told apart</label>
+          <input type="text" id="f-devlabel" maxlength="24" autocomplete="off">
         </div>
         <div class="field">
           <label>ADS-B aircraft.json URL (running dump1090/tar1090)</label>
@@ -479,6 +483,10 @@ function render(s){
   animateNum($("#n-mesh"), newM);
   $("#s-air").textContent = (s.pending.aircraft||0)+" staged to send";
   $("#s-mesh").textContent = (s.pending.mesh||0)+" staged to send";
+  // Last Wardrift mesh result (nodes + local radio telemetry), when a key is set.
+  const wdm=(s.last_cycle||{}).wardrift_mesh;
+  const wdmTxt=((s.config||{}).has_wardrift_key && wdm && wdm!=="skipped") ? "Wardrift: "+wdm : "";
+  $("#s-mesh-wd").textContent = wdmTxt; $("#s-mesh-wd").title = wdmTxt;
   // Current-seen counts live in the Live Incoming panel now.
   const L=s.live||{};
   $("#lc-air").textContent = L.aircraft||0;
@@ -511,6 +519,7 @@ function render(s){
   // settings (only fill when not being edited)
   const c=s.config||{};
   fillIfIdle("#f-adsburl", c.adsb_json_url||"");
+  fillIfIdle("#f-devlabel", c.upload_device_label||""); $("#f-devlabel").placeholder = c.upload_device_default||"";
   fillChk("#f-adsb", c.adsb_enabled); fillChk("#f-mesh", c.mesh_enabled); fillChk("#f-boot", c.start_on_boot);
   fillIfIdle("#f-advert", c.mesh_advert_minutes);
   fillIfIdle("#f-hops", c.mesh_hop_limit);
@@ -678,6 +687,7 @@ $("#btn-save").onclick=async()=>{
     interval_hours:+$("#interval").value,
     adsb_enabled:$("#f-adsb").checked, mesh_enabled:$("#f-mesh").checked,
     adsb_json_url:$("#f-adsburl").value.trim(),
+    upload_device_label:$("#f-devlabel").value.replace(/[^A-Za-z0-9]/g,"").slice(0,24),
     mesh_devices:collectMeshDevs(),
     mesh_advert_minutes:parseInt($("#f-advert").value)||0,
     mesh_hop_limit:Math.min(7,Math.max(1,parseInt($("#f-hops").value)||7)),

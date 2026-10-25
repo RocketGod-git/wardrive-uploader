@@ -92,6 +92,15 @@ def _fmt_ts(unix_ts: Any) -> str:
     return time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
 
 
+def _heard_ts(unix_ts: Any) -> float | None:
+    """The radio's own last-heard stamp, or None when it has none."""
+    try:
+        t = float(unix_ts)
+    except (TypeError, ValueError):
+        return None
+    return t if t > 0 else None
+
+
 def _hav_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     import math
     r = 6371.0
@@ -162,6 +171,7 @@ def contact_to_node(contact: Any) -> dict[str, Any] | None:
         "lon": round(lon, 6) if lon is not None else None,
         "rssi": None,
         "first_seen": _fmt_ts(last),
+        "heard_ts": _heard_ts(last),
         "type": "MESHCORE",
         "network": "meshcore",
         "uploadable": lat is not None and lon is not None,
@@ -314,6 +324,7 @@ def meshtastic_node_to_display(nid: str, node: dict) -> dict[str, Any] | None:
         "lon": round(lon, 6) if lon is not None else None,
         "rssi": node.get("snr"),
         "first_seen": _fmt_ts(node.get("lastHeard")),
+        "heard_ts": _heard_ts(node.get("lastHeard")),
         "type": "MESHCORE",       # envelope marker constant (server sorts by `network`)
         "network": "meshtastic",
         "uploadable": uploadable,

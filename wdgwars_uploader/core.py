@@ -17,7 +17,7 @@ from typing import Any
 
 from . import adsb, detect, mayhem, mesh, mesh_capture, prereq, watchdog
 from . import wardrift
-from .config import Config, config_dir
+from .config import Config, config_dir, device_label
 from .state import LiveState
 from .uploader import WDGWarsClient
 
@@ -30,17 +30,19 @@ class CycleReport:
     adsb: str = "skipped"
     mesh: str = "skipped"
     wardrift: str = "skipped"
+    wardrift_mesh: str = "skipped"
     key_ok: bool = False
     aircraft_sent: int = 0
     mesh_sent: int = 0
     errors: list[str] = field(default_factory=list)
 
     def line(self) -> str:
-        return f"ADS-B: {self.adsb} | Mesh: {self.mesh} | Wardrift: {self.wardrift}"
+        return (f"ADS-B: {self.adsb} | Mesh: {self.mesh} | Wardrift: {self.wardrift}"
+                f" | Wardrift mesh: {self.wardrift_mesh}")
 
     def as_dict(self) -> dict[str, Any]:
         return {"ts": self.started, "adsb": self.adsb, "mesh": self.mesh,
-                "wardrift": self.wardrift,
+                "wardrift": self.wardrift, "wardrift_mesh": self.wardrift_mesh,
                 "aircraft_sent": self.aircraft_sent, "mesh_sent": self.mesh_sent,
                 "errors": self.errors}
 
@@ -109,9 +111,11 @@ class UploaderCore:
         # node DB on every launch.
         self.capture = mesh_capture.MeshCaptureService(
             persist_path=str(config_dir() / "mesh_store.json"))
+        self.wardrift_mesh = wardrift.MeshReporter(config_dir() / "wardrift_mesh.json")
 
     def client(self) -> WDGWarsClient:
-        return WDGWarsClient(self.cfg.get("api_key", ""))
+        return WDGWarsClient(self.cfg.get("api_key", ""),
+                             label=self.cfg.get("upload_device_label", ""))
 
     @property
     def last_detect(self):
@@ -127,6 +131,8 @@ class UploaderCore:
         self.state.config_summary = {
             "has_api_key": bool((c.get("api_key") or "").strip()),
             "has_wardrift_key": bool((c.get("wardrift_api_key") or "").strip()),
+            "upload_device_label": c.get("upload_device_label", ""),
+            "upload_device_default": device_label(),
             "interval_hours": c.get("interval_hours", 4),
             "adsb_enabled": c.get("adsb_enabled", True),
             "mesh_enabled": c.get("mesh_enabled", True),
@@ -279,7 +285,8 @@ class UploaderCore:
             if not recs:
                 rep.wardrift = "0 aircraft logged"
                 return
-            res = wardrift.WardriftClient(key).upload_aircraft(recs)
+            res = wardrift.WardriftClient(
+                key, label=self.cfg.get("upload_device_label", "")).upload_aircraft(recs)
             if res.sent:
                 self.state.mark_wardrift_uploaded(res.sent)
             rep.wardrift = res.summary()
@@ -293,11 +300,32 @@ class UploaderCore:
             rep.errors.append(f"wardrift: {e}")
             log.exception("Wardrift upload failed")
 
+    def _upload_wardrift_mesh(self, key: str, rep: CycleReport) -> None:
+        """Send mesh nodes and the local radios' telemetry to Wardrift. Runs on
+        its own, so a failure here never affects the WDGWars mesh upload."""
+        try:
+            self.poll_mesh()
+            nodes = mesh.filter_outlier_positions(self.capture.snapshot())
+            res = wardrift.WardriftClient(key, timeout=30.0).upload_mesh(
+                nodes, self.capture.local_radios(), self.wardrift_mesh)
+            rep.wardrift_mesh = res.summary()
+            if res.error:
+                rep.errors.append(f"wardrift mesh: {res.error}")
+                self.state.event(f"Wardrift mesh: {res.summary()}")
+            elif res.nodes:
+                self.state.event(f"Wardrift mesh uploaded: {res.summary()}")
+        except Exception as e:
+            rep.wardrift_mesh = f"error: {e}"
+            rep.errors.append(f"wardrift mesh: {e}")
+            log.exception("Wardrift mesh upload failed")
+
     def _run_cycle_inner(self, rep: CycleReport) -> CycleReport:
         cfg = self.cfg.as_dict()
         wd_key = (cfg.get("wardrift_api_key") or "").strip()
         if wd_key and cfg.get("adsb_enabled", True):
             self._upload_wardrift(wd_key, rep)
+        if wd_key and cfg.get("mesh_enabled", True):
+            self._upload_wardrift_mesh(wd_key, rep)
 
         api_key = (cfg.get("api_key") or "").strip()
         if not api_key:
