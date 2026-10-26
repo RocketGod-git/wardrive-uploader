@@ -4,6 +4,12 @@ pystray>=0.19.5
 Pillow>=10.0
 meshcore>=1.1.0
 
+# WardriveESP flasher. esptool is pinned: the flasher drives its Python API.
+# pyusb + libusb-package reach a C5 whose USB port is bound to WinUSB (no COM port).
+esptool==5.3.1
+pyusb==1.3.1
+libusb-package==1.0.30.0
+
 # Optional: read Meshtastic devices too (in addition to MeshCore).
 #   pip install meshtastic
 meshtastic>=2.3

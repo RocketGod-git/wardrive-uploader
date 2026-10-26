@@ -681,6 +681,7 @@ class MeshCaptureService:
         self._lock = threading.Lock()
         self._persist_path = persist_path
         self._persist_ts = 0.0
+        self._paused: set[str] = set()   # ports lent to the WardriveESP flasher
         self._load()
 
     def _load(self) -> None:
@@ -725,8 +726,9 @@ class MeshCaptureService:
                   transport: str = "serial", ble_address: str = "auto") -> None:
         """Start workers for enabled devices, stop those no longer wanted."""
         want: dict[str, dict] = {}
+        paused = set(self._paused)
         for dev in devices or []:
-            if dev.get("enabled", True):
+            if dev.get("enabled", True) and (dev.get("port") or "") not in paused:
                 want[self._key(dev)] = dev
         with self._lock:
             # stop removed/disabled
@@ -753,6 +755,33 @@ class MeshCaptureService:
                         advert_minutes=advert_minutes)
                 w.start()
                 self._workers[key] = w
+
+    def pause_ports(self, ports: list[str], timeout: float = 25.0) -> list[str]:
+        """Release these serial ports for the flasher: stop their workers and wait
+        until each has closed its port. Returns the ports that had a worker. The
+        next reconcile skips every paused port until :meth:`resume_ports`."""
+        want = {p for p in ports if p}
+        stopped = []
+        with self._lock:
+            self._paused |= want
+            for key in list(self._workers):
+                w = self._workers[key]
+                if getattr(w, "port", "") in want:
+                    self._workers.pop(key)
+                    try:
+                        w.stop()
+                    except Exception:
+                        pass
+                    stopped.append(w)
+        end = time.time() + timeout
+        for w in stopped:
+            w.join(max(0.0, end - time.time()))
+        return sorted({w.port for w in stopped})
+
+    def resume_ports(self, ports: list[str]) -> None:
+        """Give paused ports back. The next poll restarts their workers."""
+        with self._lock:
+            self._paused -= set(ports)
 
     def stop(self) -> None:
         self.persist(force=True)   # never lose the accumulated store on shutdown

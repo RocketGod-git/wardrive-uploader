@@ -4,6 +4,7 @@
     python -m wdgwars_uploader --once     # run one upload cycle, print result, exit
     python -m wdgwars_uploader --detect   # list detected devices and exit
     python -m wdgwars_uploader --check    # validate the API key and exit
+    python -m wdgwars_uploader --boards   # list ESP32 boards for the flasher and exit
 """
 
 from __future__ import annotations
@@ -40,6 +41,37 @@ def _cmd_detect() -> int:
     return 0
 
 
+def _cmd_boards() -> int:
+    """ESP32 boards the WardriveESP flasher sees and what they run (no ROM resets)."""
+    from .flasher import ports, probe
+    devs = ports.group(ports.scan_ports())
+    if not devs:
+        print("No ESP32 boards found.")
+        return 0
+    for d in devs:
+        main = d.main
+        try:
+            fw = probe.probe_firmware(main.device)
+            what = (f"WardriveESP {fw.version} ({fw.chip}{', ' + fw.board_name if fw.board_name else ''})"
+                    if fw.kind == "wardrive" else (fw.detail or fw.kind))
+        except probe.PortBusy:
+            what = "in use by another program"
+        except Exception as e:  # noqa: BLE001
+            what = f"couldn't read it ({e})"
+        print(f"{main.label:28} {main.vid:04x}:{main.pid:04x}  {what}")
+        if d.wroom is not None:
+            try:
+                w = probe.probe_wroom(d.wroom.device)
+            except Exception:  # noqa: BLE001
+                w = None
+            if w:
+                fw2 = f"co-processor {w['coproc_fw']}" if w.get("coproc_fw") else "stock Biscuit firmware"
+                print(f"  + {d.wroom.label:24} CH340      {probe.MODEL_NAMES.get(w['board'], 'Biscuit')} WROOM, {fw2}")
+            else:
+                print(f"  + {d.wroom.label:24} CH340      not a Biscuit WROOM")
+    return 0
+
+
 def _cmd_check(core: UploaderCore) -> int:
     ok, msg = core.check_key()
     print(msg)
@@ -65,6 +97,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--once", action="store_true", help="run one upload cycle and exit")
     ap.add_argument("--detect", action="store_true", help="list detected devices and exit")
     ap.add_argument("--check", action="store_true", help="validate the API key and exit")
+    ap.add_argument("--boards", action="store_true", help="list ESP32 boards for the WardriveESP flasher and exit")
     ap.add_argument("--window", metavar="URL", help="open the dashboard as a native window (internal)")
     ap.add_argument("--watchdog", type=int, metavar="PID", help=argparse.SUPPRESS)
     ap.add_argument("--boot", action="store_true",
@@ -86,6 +119,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.detect:
         return _cmd_detect()
+    if args.boards:
+        return _cmd_boards()
 
     core = UploaderCore(Config())
     if args.check:

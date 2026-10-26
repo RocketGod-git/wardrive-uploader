@@ -431,6 +431,125 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
 .race .rl b{color:#eef;font-variant-numeric:tabular-nums}
 .race .rl b.up{color:var(--green)}
 </style>
+<style id="fx-style">
+/* ---- Flash WardriveESP panel ---- */
+:root{--fx:#39ffb0;--fx-dim:#0d8f68}
+.card.fx{border-color:rgba(57,255,176,.28);
+  background:radial-gradient(900px 300px at 0 0,rgba(57,255,176,.07),transparent 70%),
+             radial-gradient(700px 280px at 100% 0,rgba(0,229,255,.06),transparent 70%),linear-gradient(180deg,var(--bg2),#070b11)}
+.card.fx::before,.card.fx::after{background:var(--fx);box-shadow:0 0 10px var(--fx)}
+.fx-head{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:12px}
+.fx-bolt{width:44px;height:44px;flex:none;border-radius:12px;display:flex;align-items:center;justify-content:center;
+  background:#05100c;border:1px solid rgba(57,255,176,.5);box-shadow:0 0 18px rgba(57,255,176,.25),inset 0 0 12px rgba(57,255,176,.15)}
+.fx-bolt svg{width:24px;height:24px;filter:drop-shadow(0 0 6px var(--fx))}
+.fx-title{min-width:0}
+.fx-title h2{margin:0;font-size:18px;letter-spacing:3px;color:#eef;text-transform:uppercase;
+  background:linear-gradient(90deg,var(--fx),var(--cyan));-webkit-background-clip:text;background-clip:text;color:transparent}
+.fx-title .sub2{font-size:11px;color:var(--muted)}
+.fx-pills{display:flex;gap:6px;flex-wrap:wrap}
+.fx-pill{font-size:10px;letter-spacing:1px;border:1px solid var(--line);border-radius:20px;padding:3px 10px;color:var(--muted);background:#070c12;white-space:nowrap}
+.fx-pill b{color:var(--fx);font-weight:800}
+.fx-note{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 14px;padding:10px 14px;border-radius:10px;font-size:12px;
+  border:1px solid rgba(57,255,176,.3);background:linear-gradient(90deg,rgba(57,255,176,.09),rgba(0,229,255,.04) 60%,transparent)}
+.fx-note .ic{font-size:18px;filter:drop-shadow(0 0 6px var(--fx))}
+.fx-note b{color:#eef}
+.fx-note a{margin-left:auto;color:var(--fx);border:1px solid rgba(57,255,176,.45);border-radius:20px;padding:4px 12px;white-space:nowrap}
+.fx-note a:hover{background:rgba(57,255,176,.08);text-decoration:none}
+.fx-boards{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,380px),1fr));gap:14px}
+.fx-board{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:12px;padding:14px 16px;
+  background:linear-gradient(180deg,#0b121b,#060a10);display:flex;flex-direction:column;gap:12px;min-width:0;transition:.2s}
+.fx-board:hover{border-color:rgba(57,255,176,.35)}
+.fx-board.bis{border-color:rgba(0,229,255,.35);background:radial-gradient(500px 200px at 0 0,rgba(0,229,255,.08),transparent 70%),linear-gradient(180deg,#0b121b,#060a10)}
+.fx-board.dim{opacity:.45;pointer-events:none}
+.fx-bh{display:flex;align-items:center;gap:12px;min-width:0}
+.fx-glyph{width:46px;height:46px;flex:none}
+.fx-glyph rect.body{fill:#071510;stroke:var(--fx);stroke-width:1.5}
+.fx-glyph .pin{stroke:var(--fx);stroke-width:2;opacity:.7}
+.fx-glyph text{fill:var(--fx);font:800 11px ui-monospace,Consolas,monospace}
+.fx-board.bis .fx-glyph rect.body{stroke:var(--cyan)} .fx-board.bis .fx-glyph .pin{stroke:var(--cyan)} .fx-board.bis .fx-glyph text{fill:var(--cyan)}
+.fx-bh .who{min-width:0;flex:1}
+.fx-bh .nm{font-size:17px;font-weight:800;color:#eef;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fx-bh .pt{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fx-tag{flex:none;font-size:9px;letter-spacing:1.5px;border-radius:20px;padding:2px 8px;border:1px solid currentColor;white-space:nowrap;text-transform:uppercase}
+.fx-tag.fx-two{color:var(--cyan)}
+.fx-chips{display:flex;flex-direction:column;gap:8px}
+.fx-chip{border:1px solid var(--line);border-radius:9px;padding:8px 10px;background:rgba(4,8,12,.6);min-width:0}
+.fx-chip .r1{display:flex;align-items:center;gap:8px;min-width:0}
+.fx-chip .cn{font-weight:800;color:#dfe;white-space:nowrap}
+.fx-chip .sp{flex:1}
+.fx-chip .rl{font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px}
+.fx-fw{font-size:10px;border-radius:6px;padding:2px 8px;white-space:nowrap;border:1px solid var(--line);color:var(--muted);max-width:70%;overflow:hidden;text-overflow:ellipsis}
+.fx-fw.ok{color:var(--green);border-color:rgba(37,244,167,.4)}
+.fx-fw.update{color:var(--amber);border-color:rgba(255,179,0,.45)}
+.fx-fw.stock{color:var(--cyan);border-color:rgba(0,229,255,.35)}
+.fx-fw.danger{color:var(--red);border-color:rgba(255,77,94,.45)}
+.fx-fw.warn{color:var(--amber);border-color:rgba(255,179,0,.45)}
+.fx-warn{font-size:11px;color:var(--amber);border-left:2px solid var(--amber);padding:2px 0 2px 8px}
+.fx-warn.red{color:#ff8a95;border-color:var(--red)}
+.fx-act{display:flex;gap:8px;align-items:center;margin-top:auto}
+.btn.fx-go{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap;
+  background:linear-gradient(90deg,#0f9b70,#0b7d8f);border-color:var(--fx);color:#00170f;box-shadow:0 0 18px rgba(57,255,176,.25)}
+.btn.fx-go:hover{background:linear-gradient(90deg,#16c98f,#12a4bb);box-shadow:0 0 28px rgba(57,255,176,.5)}
+.btn.fx-go svg{width:16px;height:16px}
+.fx-why{font-size:11px;color:var(--muted)}
+.fx-scan{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)}
+.fx-scan i{width:7px;height:7px;border-radius:50%;background:var(--fx);box-shadow:0 0 8px var(--fx);animation:pulse 1s infinite}
+.fx-empty{border:1px dashed var(--line);border-radius:12px;padding:26px;text-align:center;color:var(--muted);font-size:12px}
+.fx-empty b{display:block;color:#dfe;font-size:15px;margin-bottom:6px}
+.fx-empty .radar{width:64px;height:64px;margin:0 auto 12px;border-radius:50%;border:1px solid rgba(57,255,176,.4);position:relative;
+  background:repeating-radial-gradient(circle,transparent 0 9px,rgba(57,255,176,.12) 9px 10px)}
+.fx-empty .radar::after{content:"";position:absolute;inset:0;border-radius:50%;
+  background:conic-gradient(from 0deg,transparent 0 75%,rgba(57,255,176,.45));animation:spin 2.4s linear infinite}
+/* job */
+.fx-job{border:1px solid rgba(57,255,176,.45);border-radius:14px;padding:16px 18px;margin-bottom:14px;position:relative;overflow:hidden;
+  background:radial-gradient(700px 240px at 0 0,rgba(57,255,176,.1),transparent 70%),linear-gradient(180deg,#0b141a,#060a10);
+  box-shadow:0 0 30px rgba(57,255,176,.12)}
+.fx-job.fail{border-color:rgba(255,77,94,.55);box-shadow:0 0 30px rgba(255,77,94,.12);
+  background:radial-gradient(700px 240px at 0 0,rgba(255,77,94,.09),transparent 70%),linear-gradient(180deg,#120b10,#060a10)}
+.fx-jh{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.fx-ring{width:86px;height:86px;flex:none;position:relative}
+.fx-ring svg{width:86px;height:86px;transform:rotate(-90deg)}
+.fx-ring circle{fill:none;stroke-width:7}
+.fx-ring .bg{stroke:#0e1a1c}
+.fx-ring .fg{stroke:var(--fx);stroke-linecap:round;filter:drop-shadow(0 0 6px var(--fx));transition:stroke-dashoffset .4s ease}
+.fx-ring .pc{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;color:#eef;font-variant-numeric:tabular-nums}
+.fx-ring.spin svg{animation:spin 1.4s linear infinite}
+.fx-job.fail .fx-ring .fg{stroke:var(--red);filter:drop-shadow(0 0 6px var(--red))}
+.fx-jt{min-width:0;flex:1}
+.fx-jt .big{font-size:20px;font-weight:800;color:#eef;letter-spacing:.5px}
+.fx-jt .sm{font-size:12px;color:var(--muted)}
+.fx-job.fail .fx-jt .big{color:#ff8a95}
+.fx-steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:10px;margin-top:14px}
+.fx-step{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:rgba(4,8,12,.6)}
+.fx-step .r1{display:flex;justify-content:space-between;gap:8px;font-size:12px;margin-bottom:7px}
+.fx-step .r1 b{color:#dfe;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fx-step .r1 span{color:var(--fx);white-space:nowrap;font-variant-numeric:tabular-nums}
+.fx-step.done .r1 span{color:var(--green)} .fx-step.failed .r1 span{color:var(--red)} .fx-step.waiting .r1 span{color:var(--muted)}
+.fx-bar{height:9px;border-radius:6px;background:#0e1620;overflow:hidden;position:relative}
+.fx-bar>div{height:100%;width:0;border-radius:6px;background:linear-gradient(90deg,var(--fx-dim),var(--fx));box-shadow:0 0 12px var(--fx);transition:width .35s ease}
+.fx-bar.run>div{background:repeating-linear-gradient(45deg,var(--fx) 0 10px,#22d99a 10px 20px);background-size:28px 28px;animation:fxstripe .7s linear infinite}
+.fx-bar.ind>div{width:35%!important;animation:fxind 1.2s ease-in-out infinite}
+.fx-step.done .fx-bar>div{background:var(--green);box-shadow:0 0 10px var(--green)}
+.fx-step.failed .fx-bar>div{background:var(--red);box-shadow:0 0 10px var(--red)}
+.fx-step .dt{font-size:10px;color:var(--muted);margin-top:5px;min-height:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@keyframes fxstripe{to{background-position:28px 0}}
+@keyframes fxind{0%{margin-left:-35%}100%{margin-left:100%}}
+.fx-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-top:14px}
+.fx-facts .tile b{color:var(--fx)}
+.fx-check{width:86px;height:86px;flex:none;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  border:2px solid var(--fx);box-shadow:0 0 26px rgba(57,255,176,.45),inset 0 0 18px rgba(57,255,176,.2);animation:fxpop .5s ease-out}
+.fx-check svg{width:44px;height:44px}
+.fx-check path{stroke:var(--fx);stroke-width:4;fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:60;stroke-dashoffset:60;animation:fxdraw .6s .15s ease-out forwards}
+@keyframes fxpop{0%{transform:scale(.4);opacity:0}70%{transform:scale(1.08);opacity:1}100%{transform:scale(1)}}
+@keyframes fxdraw{to{stroke-dashoffset:0}}
+.fx-jbtns{display:flex;gap:8px;margin-left:auto}
+.fx-hint{margin-top:10px;font-size:12px;color:#dfe;border-left:2px solid var(--amber);padding-left:10px}
+.fx-wn{margin-top:10px;font-size:12px;color:var(--amber)}
+.fx-log{margin-top:12px}
+.fx-log summary{cursor:pointer;font-size:11px;color:var(--muted);letter-spacing:1px}
+.fx-log pre{margin:8px 0 0;max-height:200px;overflow:auto;background:#000;border:1px solid var(--line);border-radius:8px;padding:10px;font-size:11px;line-height:1.45;color:#8fa3b5;white-space:pre-wrap;word-break:break-word}
+@media (prefers-reduced-motion:reduce){.fx-bar.run>div,.fx-bar.ind>div,.fx-ring.spin svg,.fx-empty .radar::after{animation:none}}
+</style>
 </head>
 <body>
 <div class="bgfx" aria-hidden="true"><div class="glow g1"></div><div class="glow g2"></div><div class="glow g3"></div><div class="grid"></div><div class="rings"></div><div class="sweep"></div><div class="scan"></div><div class="vig"></div></div>
@@ -447,6 +566,7 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
     <div class="spacer"></div>
     <div class="hlinks">
       <a class="hlink" href="https://discord.gg/thepirates" target="_blank" rel="noopener" title="The Pirates' Plunder"><img src="/static/tpp.png" alt="">TPP</a>
+      <a class="hlink" href="#card-flash" title="Flash WardriveESP onto a board">⚡ Flasher</a>
       <a class="hlink" href="https://rocketgod.dev" target="_blank" rel="noopener">rocketgod.dev ↗</a>
     </div>
     <div class="hstat"><span>OPERATOR</span><b id="op-name">—</b></div>
@@ -529,6 +649,21 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
       <div class="lbhead"><img class="lblogo" src="/static/wardrift.svg" alt=""><h2>Wardrift leaderboards</h2><span class="lbme" id="lbme-wd"></span></div>
       <div class="tabs wd-tabs" id="lbt-wd"></div>
       <div class="lbx wd" id="lbb-wd"><div class="lbmsg">loading…</div></div>
+    </div>
+
+    <!-- WardriveESP flasher -->
+    <div class="card col-12 fx" id="card-flash">
+      <div class="fx-head">
+        <div class="fx-bolt"><svg viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z" fill="#39ffb0"/></svg></div>
+        <div class="fx-title"><h2>Flash WardriveESP</h2><div class="sub2">Plug in a board. One click flashes it, and both chips on a Biscuit Pro or Ultra.</div></div>
+        <div class="fx-pills" id="fx-pills"></div>
+        <span class="spacer"></span>
+        <span class="fx-scan" id="fx-scan" style="display:none"><i></i>Scanning</span>
+        <button class="btn ghost sm" id="fx-rescan" type="button">⟳ Rescan</button>
+      </div>
+      <div class="fx-note"><span class="ic">📱</span><span><b>On Android?</b> Wardrive Go gives the best experience. Plug the board into your phone and tap Flash in the app.</span><a id="fx-play" href="https://play.google.com/store/apps/details?id=com.rocketgod.wardrive" target="_blank" rel="noopener">Wardrive Go on Google Play ↗</a></div>
+      <div id="fx-job"></div>
+      <div class="fx-boards" id="fx-boards"><div class="fx-empty" style="grid-column:1/-1"><div class="radar"></div><b>Looking for boards</b></div></div>
     </div>
 
     <!-- events -->
@@ -651,6 +786,7 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
 </div>
 <div class="modal" id="modal"><div class="sheet" id="sheet"></div></div>
 <div class="toast" id="toast"></div>
+<div class="modal" id="fx-modal"><div class="sheet mag" id="fx-sheet"></div></div>
 
 <script>
 const $ = s => document.querySelector(s);
@@ -1499,6 +1635,211 @@ function renderWdAccount(s){
 }
 
 poll(); setInterval(poll, 2500);
+</script>
+<script id="fx-script">
+// ---- Flash WardriveESP panel: polls /api/flasher, renders boards and the running job ----
+(function(){
+  const $ = s => document.querySelector(s);
+  const esc = s => String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const STAGE = {waiting:'Waiting',settling:'Settling',connecting:'Connecting',downloading:'Downloading',writing:'Writing',
+    verifying:'Verifying',restarting:'Restarting',checking:'Checking',done:'Done',failed:'Failed',skipped:'Skipped'};
+  const BOLT = '<svg viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z" fill="currentColor"/></svg>';
+  let timer = null, boardSig = '', jobSig = '', last = null;
+
+  async function call(path, body){
+    const r = await fetch(path, {method: body ? 'POST' : 'GET', headers: {'Content-Type': 'application/json'},
+      body: body ? JSON.stringify(body) : undefined});
+    return r.json();
+  }
+
+  function glyph(chip){
+    const t = (chip||'').replace(/^ESP32-?/,'') || '32';
+    let pins = '';
+    for (let i = 0; i < 4; i++) {
+      const p = 12 + i * 7.3;
+      pins += `<line class="pin" x1="${p}" y1="2" x2="${p}" y2="8"/><line class="pin" x1="${p}" y1="38" x2="${p}" y2="44"/>` +
+              `<line class="pin" x1="2" y1="${p}" x2="8" y2="${p}"/><line class="pin" x1="38" y1="${p}" x2="44" y2="${p}"/>`;
+    }
+    return `<svg class="fx-glyph" viewBox="0 0 46 46">${pins}<rect class="body" x="8" y="8" width="30" height="30" rx="4"/>` +
+           `<text x="23" y="27" text-anchor="middle">${esc(t.slice(0,3))}</text></svg>`;
+  }
+
+  function chipRow(c){
+    const role = c.role === 'coproc' ? 'Second chip · co-processor' : 'Main chip';
+    const port = [c.port, c.transport].filter(Boolean).join(' · ');
+    return `<div class="fx-chip"><div class="r1"><span class="cn">${esc(c.chip || 'Chip unknown')}</span><span class="sp"></span>` +
+      `<span class="fx-fw ${esc(c.fw.tone)}" title="${esc(c.fw.text)}">${esc(c.fw.text)}</span></div>` +
+      `<div class="rl" title="${esc(port)}">${esc(role)}${port ? ' · ' + esc(port) : ''}</div></div>`;
+  }
+
+  function boardCard(b, running){
+    const dim = running && running !== b.id ? ' dim' : '';
+    const busyHere = running === b.id;
+    const tag = b.biscuit ? '<span class="fx-tag fx-two">2 chips</span>' : '';
+    const ports = b.ports.join(' + ') + (b.name ? ' · ' + b.name : '');
+    const warn = b.warn ? `<div class="fx-warn${b.busy === 'uploader' || /erases/.test(b.warn) ? ' red' : ''}">${esc(b.warn)}</div>` : '';
+    let act;
+    if (b.probing) act = `<span class="fx-scan"><i></i>Reading the board</span>`;
+    else act = `<button class="btn fx-go" data-fx-flash="${esc(b.id)}" ${b.can_flash && !running ? '' : 'disabled'}>${BOLT}${esc(busyHere ? 'Flashing' : b.action)}</button>` +
+               (b.can_identify && !running ? `<button class="btn ghost sm" data-fx-id="${esc(b.id)}" title="Reset it into the ROM loader and read the chip">Identify</button>` : '');
+    return `<div class="fx-board${b.biscuit ? ' bis' : ''}${dim}"><div class="fx-bh">${glyph(b.chips[0] && b.chips[0].chip)}` +
+      `<div class="who"><div class="nm">${esc(b.title)}</div><div class="pt">${esc(ports)}</div></div>${tag}</div>` +
+      `<div class="fx-chips">${b.chips.map(chipRow).join('')}</div>${warn}` +
+      `<div class="fx-act">${act}</div>${b.why ? `<div class="fx-why">${esc(b.why)}</div>` : ''}</div>`;
+  }
+
+  function renderBoards(s){
+    const running = s.job && s.job.state === 'running' ? s.job.board_id : '';
+    const sig = JSON.stringify([s.boards, running, !!s.firmware]);
+    if (sig === boardSig) return;
+    boardSig = sig;
+    const box = $('#fx-boards');
+    if (!s.boards.length) {
+      box.innerHTML = `<div class="fx-empty" style="grid-column:1/-1"><div class="radar"></div><b>No ESP32 board found</b>` +
+        `Plug in an ESP32-C3, C5, C6 or S3 over USB. A Biscuit Pro or Ultra shows up as one device with both chips.<br>` +
+        `No COM port showing up? CP210x and CH340 boards need their USB driver.</div>`;
+      return;
+    }
+    box.innerHTML = s.boards.map(b => boardCard(b, running)).join('');
+  }
+
+  function pct(f){ return f == null ? '' : Math.round(f * 100) + '%'; }
+
+  function overall(job){
+    const n = job.steps.length || 1;
+    let t = 0;
+    for (const st of job.steps) t += st.stage === 'done' ? 1 : (st.stage === 'writing' || st.stage === 'verifying') ? (st.fraction || 0) * 0.92 : (st.stage === 'restarting' || st.stage === 'checking') ? 0.95 : 0;
+    return Math.min(1, t / n);
+  }
+
+  function fact(label, value){ return value ? `<div class="tile"><b>${esc(value)}</b><span>${esc(label)}</span></div>` : ''; }
+
+  function renderJob(s){
+    const box = $('#fx-job');
+    const job = s.job;
+    if (!job) { if (jobSig) { box.innerHTML = ''; jobSig = ''; } return; }
+    const sig = job.id + job.state + job.steps.length;
+    if (sig !== jobSig) {
+      jobSig = sig;
+      let head, body = '', btns = '';
+      if (job.state === 'running') {
+        head = `<div class="fx-ring" id="fx-ring"><svg viewBox="0 0 86 86"><circle class="bg" cx="43" cy="43" r="36"/>` +
+          `<circle class="fg" id="fx-ringfg" cx="43" cy="43" r="36" stroke-dasharray="226.2" stroke-dashoffset="226.2"/></svg><div class="pc" id="fx-pc">0%</div></div>` +
+          `<div class="fx-jt"><div class="big">${job.kind === 'identify' ? 'Identifying' : 'Flashing'} ${esc(job.title)}</div><div class="sm">Keep it plugged in. The uploader has paused its own use of these ports.</div></div>`;
+      } else if (job.state === 'done' && job.kind === 'identify') {
+        const r = job.result || {};
+        head = `<div class="fx-check"><svg viewBox="0 0 44 44"><path d="M10 23l8 8 16-17"/></svg></div>` +
+          `<div class="fx-jt"><div class="big">${esc(r.chip || 'Chip read')}</div><div class="sm">${esc(r.description || '')}${r.mac ? ' · MAC ' + esc(r.mac) : ''}</div></div>`;
+        btns = `<div class="fx-jbtns"><button class="btn sm" data-fx-dismiss>OK</button></div>`;
+      } else if (job.state === 'done') {
+        const r = job.result || {};
+        const ver = r.version || r.latest || '';
+        head = `<div class="fx-check"><svg viewBox="0 0 44 44"><path d="M10 23l8 8 16-17"/></svg></div>` +
+          `<div class="fx-jt"><div class="big">Flashed WardriveESP ${esc(ver)}</div><div class="sm">Turn on the Wi-Fi bridge in Wardrive Go and it links by itself.</div></div>`;
+        const radio = r.second_radio ? ({wifi:'Wi-Fi 2.4 GHz',btc:'BT Classic',off:'Off'}[r.second_radio] || r.second_radio) : '';
+        const batt = r.battery ? r.battery + '%' + (r.battery_mv ? ' · ' + (r.battery_mv / 1000).toFixed(2) + ' V' : '') : (r.gauge ? 'Gauge on' : '');
+        body = `<div class="fx-facts">${fact('WardriveESP', ver)}${fact('Chip', r.chip)}` +
+          `${fact('Board', r.board_name)}${fact('Battery', batt)}${fact('Second radio', radio)}${fact('Co-processor', r.coproc_fw)}` +
+          `${fact('Verified', r.verified ? 'MD5 + WD:CAPS' : (r.md5 ? 'MD5 match' : ''))}${fact('Time', job.elapsed ? Math.round(job.elapsed) + ' s' : '')}</div>` +
+          (r.warning ? `<div class="fx-wn">${esc(r.warning)}</div>` : '') + (r.note ? `<div class="fx-wn">${esc(r.note)}</div>` : '') +
+          (r.coproc_silent ? `<div class="fx-wn">The co-processor was written but didn't answer yet. Replug the board to check.</div>` : '');
+        btns = `<div class="fx-jbtns"><button class="btn sm" data-fx-dismiss>Done</button></div>`;
+      } else {
+        head = `<div class="fx-ring"><svg viewBox="0 0 86 86"><circle class="bg" cx="43" cy="43" r="36"/><circle class="fg" cx="43" cy="43" r="36" stroke-dasharray="226.2" stroke-dashoffset="0"/></svg><div class="pc" style="color:var(--red);font-size:30px">!</div></div>` +
+          `<div class="fx-jt"><div class="big">Didn't flash</div><div class="sm">${esc(job.error)}</div></div>`;
+        body = job.hint ? `<div class="fx-hint">${esc(job.hint)}</div>` : '';
+        btns = `<div class="fx-jbtns"><button class="btn fx-go sm" data-fx-retry>${BOLT}Try again</button><button class="btn ghost sm" data-fx-dismiss>Close</button></div>`;
+      }
+      const steps = `<div class="fx-steps">${job.steps.map((st, i) => `<div class="fx-step" id="fx-st${i}"><div class="r1"><b>${esc(st.title)}</b><span></span></div>` +
+        `<div class="fx-bar"><div></div></div><div class="dt"></div></div>`).join('')}</div>`;
+      box.innerHTML = `<div class="fx-job${job.state === 'failed' ? ' fail' : ''}"><div class="fx-jh">${head}${btns}</div>${steps}${body}` +
+        `<details class="fx-log"${job.state === 'failed' ? ' open' : ''}><summary>DETAILS</summary><pre id="fx-logpre"></pre></details></div>`;
+    }
+    // live parts: no rebuild, so the animations keep running
+    job.steps.forEach((st, i) => {
+      const el = document.getElementById('fx-st' + i);
+      if (!el) return;
+      el.className = 'fx-step ' + st.stage;
+      el.querySelector('.r1 b').textContent = st.title;
+      el.querySelector('.r1 span').textContent = (STAGE[st.stage] || st.stage) +
+        ((st.stage === 'writing' || st.stage === 'downloading') && st.fraction != null ? ' ' + pct(st.fraction) : '');
+      const bar = el.querySelector('.fx-bar'), fill = bar.firstElementChild;
+      const active = !['done', 'failed', 'waiting', 'skipped'].includes(st.stage);
+      const known = st.fraction != null && (st.stage === 'writing' || st.stage === 'downloading');
+      bar.className = 'fx-bar' + (active ? (known ? ' run' : ' run ind') : '');
+      fill.style.width = st.stage === 'done' ? '100%' : known ? pct(st.fraction) : (st.stage === 'failed' ? (fill.style.width || '100%') : '0%');
+      el.querySelector('.dt').textContent = st.detail || (st.stage === 'writing' ? 'Writing and checking every block' :
+        st.stage === 'checking' ? 'Asking the firmware what it runs' : st.stage === 'restarting' ? 'Booting the new firmware' :
+        st.stage === 'connecting' ? 'Putting it in flash mode' : '');
+    });
+    if (job.state === 'running') {
+      const f = overall(job), fg = document.getElementById('fx-ringfg');
+      if (fg) fg.setAttribute('stroke-dashoffset', String(226.2 * (1 - f)));
+      const pc = document.getElementById('fx-pc');
+      if (pc) pc.textContent = Math.round(f * 100) + '%';
+    }
+    const pre = document.getElementById('fx-logpre');
+    if (pre) { const t = (job.log || []).join('\n'); if (pre.textContent !== t) { pre.textContent = t; pre.scrollTop = pre.scrollHeight; } }
+  }
+
+  function renderPills(s){
+    const f = s.firmware;
+    const html = f ? `<span class="fx-pill">WardriveESP <b>${esc(f.latest)}</b></span>` + (f.coproc ? `<span class="fx-pill">Co-processor <b>${esc(f.coproc)}</b></span>` : '')
+      : `<span class="fx-pill">${esc(s.firmware_error || 'Reading the latest version')}</span>`;
+    const box = $('#fx-pills');
+    if (box.innerHTML !== html) box.innerHTML = html;
+    $('#fx-scan').style.display = s.scanning ? '' : 'none';
+    if (s.android_url) $('#fx-play').href = s.android_url;
+  }
+
+  async function poll(){
+    clearTimeout(timer);
+    try {
+      const s = await call('/api/flasher');
+      last = s;
+      renderPills(s); renderJob(s); renderBoards(s);
+    } catch (e) { /* the main poll shows OFFLINE */ }
+    const running = last && last.job && last.job.state === 'running';
+    timer = setTimeout(poll, running ? 600 : (last && last.scanning ? 1200 : 3000));
+  }
+
+  function confirmMesh(c){
+    return new Promise(res => {
+      const m = $('#fx-modal');
+      $('#fx-sheet').innerHTML = `<div class="hd"><h2>${esc(c.title)}</h2></div><div class="bd">` +
+        c.lines.map((l, i) => `<p style="margin:${i ? '6px' : '0'} 0 0;color:${i ? 'var(--muted)' : '#dfe'}">${esc(l)}</p>`).join('') +
+        `<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px"><button class="btn ghost sm" id="fx-no">Cancel</button>` +
+        `<button class="btn mag sm" id="fx-yes">Flash anyway</button></div></div>`;
+      m.classList.add('show');
+      const done = v => { m.classList.remove('show'); res(v); };
+      $('#fx-no').onclick = () => done(false);
+      $('#fx-yes').onclick = () => done(true);
+      m.onclick = e => { if (e.target === m) done(false); };
+    });
+  }
+
+  async function flash(id){
+    let r = await call('/api/flasher/flash', {id});
+    if (!r.ok && r.confirm) {
+      if (!(await confirmMesh(r.confirm))) return;
+      r = await call('/api/flasher/flash', {id, confirm: true});
+    }
+    if (!r.ok && r.error && typeof toast === 'function') toast(r.error);
+    boardSig = ''; poll();
+  }
+
+  document.addEventListener('click', async e => {
+    const t = e.target.closest('[data-fx-flash],[data-fx-id],[data-fx-retry],[data-fx-dismiss],#fx-rescan');
+    if (!t) return;
+    if (t.dataset.fxFlash) return flash(t.dataset.fxFlash);
+    if (t.dataset.fxId) { await call('/api/flasher/identify', {id: t.dataset.fxId}); return poll(); }
+    if ('fxRetry' in t.dataset) { await call('/api/flasher/retry', {}); return poll(); }
+    if ('fxDismiss' in t.dataset) { await call('/api/flasher/dismiss', {}); jobSig = 'x'; boardSig = ''; return poll(); }
+    if (t.id === 'fx-rescan') { await call('/api/flasher/scan', {}); boardSig = ''; if (typeof toast === 'function') toast('Looking for boards'); return poll(); }
+  });
+
+  poll();
+})();
 </script>
 </body>
 </html>
