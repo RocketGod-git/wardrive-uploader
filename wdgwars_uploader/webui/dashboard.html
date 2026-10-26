@@ -183,6 +183,11 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
 .devrow .d-rm{padding:5px 10px}
 .msg{font-size:12px;margin-left:8px}
 .msg.ok{color:var(--green)} .msg.err{color:var(--red)}
+.posrow{font-size:12px;color:var(--muted);margin:2px 0}
+.posrow.ok{color:var(--green)} .posrow.warn{color:var(--amber)}
+.posres{display:flex;flex-direction:column;gap:4px;margin:4px 0}
+.posres button{text-align:left;font-size:12px;padding:6px 10px;text-transform:none;letter-spacing:0}
+.posopt{white-space:nowrap} .posopt input{width:auto}
 /* detail modal */
 .feed tr{cursor:pointer}
 .feed tr:hover td{background:rgba(0,229,255,.06)}
@@ -354,6 +359,22 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
           <div id="mesh-devs"></div>
           <button class="btn ghost" id="btn-adddev" type="button" style="margin-top:6px;padding:6px 12px">+ Add device</button>
         </div>
+        <div class="field" style="grid-column:1/-1">
+          <label>Radio position — Wardrift only gives influence to radios that share a location, and most radios have no GPS. Set where your radio sits.</label>
+          <div id="pos-radios"></div>
+          <div class="row">
+            <input type="text" id="f-pos-q" placeholder="Type an address or place, then press Find">
+            <button class="btn ghost" id="btn-pos-find" type="button">Find</button>
+            <button class="btn ghost" id="btn-pos-map" type="button">Pick on map</button>
+          </div>
+          <div id="pos-results"></div>
+          <div class="row" style="align-items:center;flex-wrap:wrap">
+            <label class="switch posopt" style="margin:0"><input type="checkbox" id="f-pos-coarse" checked> Coarse (about 1 km, keeps your exact spot private)</label>
+            <span class="msg" id="pos-chosen">No spot chosen yet</span>
+            <button class="btn" id="btn-pos-set" type="button" disabled>Set on my radios</button>
+            <span class="msg" id="pos-msg"></span>
+          </div>
+        </div>
         <div class="field">
           <label>Mesh discovery nudge every (minutes, 0 = off) — MeshCore flood advert / Meshtastic NodeInfo request</label>
           <input type="number" id="f-advert" min="0" max="1440" step="5" placeholder="60">
@@ -471,7 +492,7 @@ function render(s){
     : protos.map(p=>NAME[p]||p).join(' + ');
   let mtxt;
   if(mdevs.length){
-    mtxt = mdevs.map(d=>`${d.port} ${d.protocol==='meshtastic'?'MT':'MC'} ${d.connected?d.contacts:'✗'}`).join(' · ');
+    mtxt = mdevs.map(d=>`${d.port} ${d.protocol==='meshtastic'?'MT':'MC'} ${d.connected?d.contacts:'✗'}${d.connected&&!d.position?' ⚠ no position':''}`).join(' · ');
   } else if(mesh.present){ mtxt = anyConn?`${mesh.contacts||0} nodes`:'not responding'; }
   else { mtxt = 'not detected'; }
   $("#d-mesh-t").textContent = mtxt;
@@ -524,6 +545,7 @@ function render(s){
   fillIfIdle("#f-advert", c.mesh_advert_minutes);
   fillIfIdle("#f-hops", c.mesh_hop_limit);
   if(!window._devsInit){ renderMeshDevs(c.mesh_devices||[]); window._devsInit=true; }
+  renderRadioPositions(mdevs);
   if(!dirtyKey && document.activeElement!==$("#f-key")) $("#f-key").placeholder = c.has_api_key ? "•••••••• key set — type to change" : "paste key…";
   if(document.activeElement!==$("#f-wdkey")) $("#f-wdkey").placeholder = c.has_wardrift_key ? "•••••••• key set — type to change" : "optional — paste wdk_ key…";
 }
@@ -709,7 +731,7 @@ document.querySelectorAll("#lb-tabs .tab").forEach(t=>t.onclick=()=>{
 // ---- detail modals ----
 function closeModal(){ $("#modal").classList.remove('show'); }
 function openModal(html, mag){
-  const sh=$("#sheet"); sh.className='sheet'+(mag?' mag':'');
+  const sh=$("#sheet"); sh.className='sheet'+(mag?' mag':''); sh.style.width='';
   sh.innerHTML=`<span class="x" onclick="closeModal()">×</span>`+html;
   $("#modal").classList.add('show');
 }
@@ -851,6 +873,46 @@ function collectMeshDevs(){
     protocol:r.querySelector('.d-proto').value, baud:115200}));
 }
 $("#btn-adddev").onclick=()=>addDevRow({protocol:'meshtastic',enabled:true});
+
+// ---- radio position ----
+let POS=null;
+function renderRadioPositions(devs){
+  const name=d=>`${d.protocol==='meshtastic'?'Meshtastic':'MeshCore'} on ${d.port}`;
+  const st=d=>d.position_status==='setting'?' (setting…)':(d.position_status||'').startsWith('failed')?` (${escHtml(d.position_status)})`:'';
+  $("#pos-radios").innerHTML = devs.length ? devs.map(d=>!d.connected
+      ? `<div class="posrow">${name(d)}: not connected</div>`
+      : d.position
+        ? `<div class="posrow ok">✓ ${name(d)} shares a position (${(+d.position[0]).toFixed(3)}, ${(+d.position[1]).toFixed(3)})${st(d)}</div>`
+        : `<div class="posrow warn">⚠ ${name(d)} has no position yet. Set one below so it can earn Wardrift influence.${st(d)}</div>`).join('')
+    : '<div class="posrow">No mesh radio connected.</div>';
+}
+function choosePos(p){ POS=p;
+  $("#pos-chosen").textContent = `${p.name||'Picked on the map'} (${p.lat.toFixed(5)}, ${p.lon.toFixed(5)})`;
+  $("#btn-pos-set").disabled=false; $("#pos-msg").textContent=''; }
+$("#btn-pos-find").onclick=async()=>{
+  const q=$("#f-pos-q").value.trim(); const box=$("#pos-results"); if(!q) return;
+  box.innerHTML='<div class="posrow">searching…</div>';
+  const r=await api('/api/geocode?q='+encodeURIComponent(q));
+  if(!r.results||!r.results.length){ box.innerHTML=`<div class="posrow warn">${escHtml(r.error||'Nothing found. Try adding the city, or use Pick on map.')}</div>`; return; }
+  box.innerHTML='<div class="posres">'+r.results.map((p,i)=>`<button class="btn ghost" type="button" data-i="${i}">${escHtml(p.name)}</button>`).join('')+'</div>';
+  box.querySelectorAll('button').forEach(b=>b.onclick=()=>{ choosePos(r.results[+b.dataset.i]); box.innerHTML=''; });
+};
+$("#f-pos-q").addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); $("#btn-pos-find").click(); } });
+$("#btn-pos-map").onclick=()=>{
+  const at=POS?`&lat=${POS.lat}&lon=${POS.lon}`:'';
+  openModal(`<div class="hd"><b>Click where your radio is, then press Use this spot</b></div><iframe src="/map?pick=1${at}" style="width:100%;height:65vh;border:0;display:block"></iframe>`);
+  $("#sheet").style.width='900px';
+};
+window.addEventListener('message',e=>{
+  if(e.origin!==location.origin||!e.data||e.data.type!=='pick') return;
+  choosePos({lat:+e.data.lat, lon:+e.data.lon}); closeModal();
+});
+$("#btn-pos-set").onclick=async()=>{
+  if(!POS) return; const m=$("#pos-msg"); m.className='msg'; m.textContent='sending…';
+  const r=await api('/api/radio-position','POST',{lat:POS.lat,lon:POS.lon,coarse:$("#f-pos-coarse").checked});
+  if(r.ok){ m.className='msg ok'; m.textContent=`✓ Sent to ${r.radios} radio${r.radios>1?'s':''} (${r.lat}, ${r.lon}). It takes about 15 seconds to show above.`; }
+  else { m.className='msg err'; m.textContent='✗ '+(r.error||'failed'); }
+};
 
 poll(); setInterval(poll, 2500);
 </script>

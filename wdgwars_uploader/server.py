@@ -112,6 +112,13 @@ class _Handler(BaseHTTPRequestHandler):
             cs = (q.get("cs") or [""])[0]
             from . import enrich
             self._send_json(enrich.full(hex_id, cs))
+        elif path == "/api/geocode":
+            q = (urllib.parse.parse_qs(parts.query).get("q") or [""])[0]
+            from . import geocode
+            try:
+                self._send_json({"results": geocode.search(q)})
+            except Exception as e:  # noqa: BLE001
+                self._send_json({"results": [], "error": f"address lookup failed: {e}"})
         else:
             self._send_json({"error": "not found"}, 404)
 
@@ -140,6 +147,20 @@ class _Handler(BaseHTTPRequestHandler):
             elif path == "/api/config":
                 self.app.update_config(body)
                 self._send_json({"ok": True, "config": self.app.core.state.config_summary})
+            elif path == "/api/radio-position":
+                lat, lon = float(body.get("lat")), float(body.get("lon"))
+                if not (-90 <= lat <= 90 and -180 <= lon <= 180) or (lat == 0 and lon == 0):
+                    self._send_json({"ok": False, "error": "that is not a valid location"})
+                    return
+                if body.get("coarse"):
+                    # Two decimals is roughly 1 km: close enough for the mesh map,
+                    # far enough not to point at a house.
+                    lat, lon = round(lat, 2), round(lon, 2)
+                n = self.app.core.capture.set_position(lat, lon)
+                if not n:
+                    self._send_json({"ok": False, "error": "no mesh radio is connected"})
+                else:
+                    self._send_json({"ok": True, "radios": n, "lat": lat, "lon": lon})
             elif path == "/api/interval":
                 h = int(body.get("interval_hours", 4))
                 self.app.set_interval(h)

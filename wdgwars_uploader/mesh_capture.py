@@ -216,7 +216,22 @@ class MeshStore:
 # ---------------------------------------------------------------------------
 # Meshtastic worker — persistent SerialInterface + live receive subscription.
 # ---------------------------------------------------------------------------
-class MeshtasticWorker(threading.Thread):
+class _PositionRequests:
+    """Queue a fixed position for the radio. The worker applies it on its own
+    connection, since that thread is the only one allowed to talk to the radio."""
+    _pos_request: tuple[float, float] | None = None
+    position_status: str = ""
+
+    def request_position(self, lat: float, lon: float) -> None:
+        self.position_status = "setting"
+        self._pos_request = (lat, lon)
+
+    def _take_position_request(self) -> tuple[float, float] | None:
+        req, self._pos_request = self._pos_request, None
+        return req
+
+
+class MeshtasticWorker(_PositionRequests, threading.Thread):
     def __init__(self, port: str, store: MeshStore, hop_limit: int = 0,
                  advert_minutes: int = 60) -> None:
         super().__init__(name=f"wdgw-cap-mt-{port}", daemon=True)
@@ -249,6 +264,26 @@ class MeshtasticWorker(threading.Thread):
             d = mesh.meshtastic_node_to_display(nid, node)
             if d:
                 self.store.put(d)
+
+    def _apply_position(self, iface) -> None:
+        """Set a queued fixed position. The radio stores it and broadcasts it as
+        its own location from then on."""
+        req = self._take_position_request()
+        if not req:
+            return
+        lat, lon = req
+        try:
+            iface.localNode.setFixedPosition(lat, lon, 0)
+            # Reflect it locally now instead of waiting for the radio's next position packet.
+            me = iface.getMyNodeInfo()
+            if isinstance(me, dict):
+                me.setdefault("position", {}).update(latitude=lat, longitude=lon)
+            self.position_status = "set"
+            log.info("set fixed position on %s: %.5f, %.5f", self.port, lat, lon)
+        except Exception as e:  # noqa: BLE001
+            self.position_status = f"failed: {e}"
+            log.warning("could not set position on %s: %s", self.port, e)
+        self._sample_radio(iface)
 
     def _sample_radio(self, iface) -> None:
         """Record the radio's own DeviceMetrics and LocalStats for the Wardrift
@@ -407,6 +442,7 @@ class MeshtasticWorker(threading.Thread):
                     break
                 self._capture_all(iface)      # re-sweep the merged DB (cheap, in-memory)
                 self._sample_radio(iface)
+                self._apply_position(iface)
                 if self.advert_minutes and (time.time() - last_advert) >= self.advert_minutes * 60:
                     mesh._meshtastic_announce(iface)
                     last_advert = time.time()
@@ -424,7 +460,7 @@ class MeshtasticWorker(threading.Thread):
 # ---------------------------------------------------------------------------
 # MeshCore worker — persistent connection + live ADVERTISEMENT subscription.
 # ---------------------------------------------------------------------------
-class MeshCoreWorker(threading.Thread):
+class MeshCoreWorker(_PositionRequests, threading.Thread):
     def __init__(self, store: MeshStore, port: str = "", transport: str = "serial",
                  ble_address: str = "auto", baud: int = 115200,
                  advert_minutes: int = 60) -> None:
@@ -462,6 +498,27 @@ class MeshCoreWorker(threading.Thread):
                 d["heard_ts"] = heard
             self.store.put(d)
             self.heard += 1
+
+    async def _apply_position(self, mc, EventType) -> None:
+        """Set a queued position as the companion's advertised location."""
+        req = self._take_position_request()
+        if not req:
+            return
+        lat, lon = req
+        try:
+            ev = await mc.commands.set_coords(lat, lon)
+            if ev is None or ev.type == EventType.ERROR:
+                raise RuntimeError("the radio refused the position")
+            info = getattr(mc, "self_info", None)
+            if isinstance(info, dict):
+                info["adv_lat"], info["adv_lon"] = lat, lon
+            self.position_status = "set"
+            log.info("set advertised position on %s: %.5f, %.5f",
+                     self.port or self.ble_address, lat, lon)
+        except Exception as e:  # noqa: BLE001
+            self.position_status = f"failed: {e}"
+            log.warning("could not set position on %s: %s", self.port or self.ble_address, e)
+        await self._sample_radio(mc, EventType)
 
     async def _sample_radio(self, mc, EventType) -> None:
         """Read the companion's own battery, uptime and packet counters for the
@@ -586,6 +643,7 @@ class MeshCoreWorker(threading.Thread):
             last_advert = last_sample = time.time()
             while not self._stop.is_set():
                 await asyncio.sleep(3)
+                await self._apply_position(mc, EventType)
                 if time.time() - last_sample >= _RADIO_SAMPLE_SECS:
                     await self._sample_radio(mc, EventType)
                     last_sample = time.time()
@@ -712,13 +770,26 @@ class MeshCaptureService:
             for key, w in self._workers.items():
                 proto, port = key.split(":", 1)
                 heard = int(getattr(w, "heard", 0))
+                node = (getattr(w, "radio", None) or {}).get("node") or {}
+                pos = ([node["lat"], node["lon"]]
+                       if node.get("lat") is not None and node.get("lon") is not None else None)
                 out.append({"port": port, "protocol": proto,
                             "connected": bool(getattr(w, "connected", False)),
-                            "heard": heard, "contacts": heard})
+                            "heard": heard, "contacts": heard,
+                            "position": pos,
+                            "position_status": getattr(w, "position_status", "")})
             return out
 
     def snapshot(self, recent_secs: float | None = None) -> list[dict]:
         return self.store.snapshot(recent_secs)
+
+    def set_position(self, lat: float, lon: float) -> int:
+        """Queue a fixed position on every connected radio. Returns how many."""
+        with self._lock:
+            workers = [w for w in self._workers.values() if getattr(w, "connected", False)]
+        for w in workers:
+            w.request_position(lat, lon)
+        return len(workers)
 
     def local_radios(self) -> list[dict]:
         """Latest reading of each connected radio's own health and counters."""

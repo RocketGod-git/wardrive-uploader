@@ -27,6 +27,9 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);
 a.home{pointer-events:auto;color:var(--cyan);text-decoration:none;border:1px solid var(--cyan);border-radius:8px;
   padding:8px 14px;background:var(--panel);letter-spacing:1px;font-size:12px}
 a.home:hover{background:rgba(0,229,255,.12)}
+button.home{pointer-events:auto;color:#001318;background:var(--cyan);border:1px solid var(--cyan);border-radius:8px;
+  padding:8px 14px;font:inherit;font-weight:700;cursor:pointer}
+button.home:disabled{opacity:.45;cursor:not-allowed}
 /* plane icon */
 .plane{transform-origin:center;filter:drop-shadow(0 0 4px rgba(0,229,255,.7))}
 .plane svg{display:block}
@@ -120,6 +123,26 @@ L.control.layers(null, {'✈ Aircraft':acLayer, '📡 Meshtastic':mtLayer, '🌐
 
 const acMarkers = {}, meshMarkers = {};
 let fitted = false;
+
+// Pick mode, opened from Settings > Radio position: a click drops a pin and
+// "Use this spot" hands it back to the dashboard.
+const PICK = new URLSearchParams(location.search);
+if (PICK.get('pick') === '1') {
+  document.querySelector('.title b').textContent = 'CLICK WHERE YOUR RADIO IS';
+  document.querySelector('a.home').style.display = 'none';
+  const use = document.createElement('button');
+  use.className = 'home'; use.textContent = 'Use this spot'; use.disabled = true;
+  document.querySelector('.topbar').appendChild(use);
+  const pinIcon = L.divIcon({className:'', iconSize:[18,18], iconAnchor:[9,9],
+    html:'<div class="node-dot mc" style="width:18px;height:18px"></div>'});
+  let pin = null;
+  const drop = ll => { pin ? pin.setLatLng(ll) : (pin = L.marker(ll, {icon:pinIcon}).addTo(map)); use.disabled = false; };
+  const lat0 = parseFloat(PICK.get('lat')), lon0 = parseFloat(PICK.get('lon'));
+  if (!isNaN(lat0) && !isNaN(lon0)) { map.setView([lat0, lon0], 15); drop([lat0, lon0]); fitted = true; }
+  map.on('click', e => drop(e.latlng));
+  use.onclick = () => { const ll = pin.getLatLng();
+    parent.postMessage({type:'pick', lat:ll.lat, lon:ll.lng}, location.origin); };
+}
 
 function planeIcon(track){
   const t = (track==null?0:track);
