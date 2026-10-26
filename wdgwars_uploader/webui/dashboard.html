@@ -238,7 +238,7 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
 .pchip b{color:#dfe;letter-spacing:1px}
 .pchip .dot{width:8px;height:8px}
 .pchip.off{opacity:.55}
-.plats{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,520px),1fr));gap:14px;align-items:start}
+.plats{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,520px),1fr));gap:14px}
 .plat{container-type:inline-size;position:relative;overflow:hidden;border-radius:12px;padding:16px 18px 14px;
   border:1px solid var(--line);background:linear-gradient(180deg,#0b121b,#060a10)}
 .plat::before{content:"";position:absolute;inset:0 0 auto 0;height:2px}
@@ -262,8 +262,12 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
 .rk span{font-size:9px;letter-spacing:1px;color:var(--muted);text-transform:uppercase;white-space:nowrap}
 .plat.wdg .rk.hot{border-color:var(--cyan);box-shadow:0 0 12px rgba(0,229,255,.25)} .plat.wdg .rk.hot b{color:var(--cyan)}
 .plat.wd .rk.hot{border-color:var(--wd);box-shadow:0 0 12px rgba(255,226,0,.25)} .plat.wd .rk.hot b{color:var(--wd)}
-.pbody{display:grid;grid-template-columns:1fr;gap:14px}
-@container (min-width:760px){.pbody{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)}}
+.plat{display:flex;flex-direction:column}
+.pbody{flex:1;display:flex;flex-direction:column;gap:14px}
+.pbody>.grow{flex:1;display:flex;flex-direction:column}
+.grow>.badgewrap{max-height:none;flex:1;align-content:flex-start}
+.grow>.mx{flex:1;grid-auto-rows:1fr}
+@container (min-width:760px){.pbody{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);align-content:start}}
 @container (min-width:1100px){.pbody{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)}}
 .hero{display:flex;gap:16px;align-items:center}
 .hero .viz{flex:none}
@@ -315,6 +319,46 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
 .xpring text{font-family:inherit}
 
 /* leaderboards v2 */
+.lbcard{display:flex;flex-direction:column}
+.lbcard .lbx{flex:1}
+.lbx:has(.lbcenter){display:flex;align-items:center;justify-content:center}
+.lbcenter{max-width:420px}
+.plat>.cta.fill{flex:1;justify-content:center;align-items:center;text-align:center}
+.lbcard.wd::before,.lbcard.wd::after{background:var(--wd);box-shadow:0 0 10px var(--wd)}
+.lblogo{width:28px;height:28px;border-radius:50%;object-fit:contain;background:#000}
+.lbcard.wd .lblogo{border-radius:7px}
+.lbhead .lbme{margin-left:auto;font-size:11px;color:var(--muted);white-space:nowrap}
+.lbhead .lbme b{color:var(--cyan)} .lbcard.wd .lbhead .lbme b{color:var(--wd)}
+#card-activity .events{max-height:260px}
+/* settings v2 */
+.sgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+@media(max-width:1000px){.sgrid{grid-template-columns:1fr}}
+.sgroup{border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:rgba(4,8,12,.55);display:flex;flex-direction:column;gap:14px;min-width:0}
+.sgroup.wide{grid-column:1/-1}
+.sgroup.wdg{border-color:rgba(0,229,255,.32);background:radial-gradient(520px 170px at 0 0,rgba(0,229,255,.08),transparent 70%),rgba(4,8,12,.55)}
+.sgroup.wd{border-color:rgba(255,226,0,.28);background:radial-gradient(520px 170px at 0 0,rgba(255,226,0,.06),transparent 70%),rgba(4,8,12,.55)}
+.sgh{display:flex;align-items:center;gap:12px;min-width:0}
+.sgh .ic{width:38px;height:38px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:18px;background:#070c12;border:1px solid var(--line)}
+.sgh img.ic{object-fit:contain;background:#000}
+.sgroup.wd .sgh img.ic{border-radius:9px}
+.sgh b{display:block;color:#eef;font-size:15px;letter-spacing:2px;text-transform:uppercase}
+.sgh .sub2{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+.sstat{margin-left:auto;font-size:10px;letter-spacing:1px;border:1px solid var(--line);border-radius:20px;padding:3px 10px;color:var(--muted);white-space:nowrap;text-transform:uppercase}
+.sstat.ok{color:var(--green);border-color:rgba(37,244,167,.4)}
+.sstat.warn{color:var(--amber);border-color:rgba(255,179,0,.4)}
+.sgroup .field label{color:#9fb0c0;font-weight:700;font-size:10px;letter-spacing:2px;text-transform:uppercase}
+.sgroup .field .hint a{color:var(--cyan)}
+.sgroup.wd .field .hint a{color:var(--wd)}
+.sgroup hr{border:0;border-top:1px dashed var(--line);margin:0}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:700px){.two{grid-template-columns:1fr}}
+.toggles{display:flex;gap:10px;flex-wrap:wrap}
+.toggle{display:flex;align-items:center;gap:9px;border:1px solid var(--line);border-radius:9px;padding:9px 14px;font-size:12px;cursor:pointer;background:#070c12;color:#dfe;white-space:nowrap}
+.toggle:hover{border-color:var(--cyan-dim)}
+.toggle input{width:auto;margin:0}
+.toggle small{color:var(--muted);font-size:10px}
+.savebar{position:sticky;bottom:12px;z-index:5;display:flex;justify-content:flex-end;align-items:center;gap:12px;margin-top:14px;padding:10px 14px;border:1px solid var(--line);border-radius:12px;background:rgba(7,12,18,.92);backdrop-filter:blur(6px)}
+.savebar .hint{margin-right:auto}
 .lbhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
 .lbhead h2{margin:0}
 .seg{display:flex;border:1px solid var(--line);border-radius:30px;overflow:hidden;background:#070c12}
@@ -445,96 +489,121 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
     </div>
 
     <!-- leaderboards -->
-    <div class="card col-8" id="card-lb">
-      <div class="lbhead"><h2>Leaderboards</h2><span class="spacer"></span><div class="seg" id="lb-seg"></div></div>
-      <div class="tabs" id="lb-tabs"></div>
-      <div class="lbx" id="lb-box"><div class="lbmsg">loading…</div></div>
+    <div class="card col-6 lbcard wdg" id="card-lb-wdg">
+      <div class="lbhead"><img class="lblogo" src="/static/wdgwars.png" alt=""><h2>WDGWars leaderboards</h2><span class="lbme" id="lbme-wdg"></span></div>
+      <div class="tabs wdg-tabs" id="lbt-wdg"></div>
+      <div class="lbx wdg" id="lbb-wdg"><div class="lbmsg">loading…</div></div>
+    </div>
+    <div class="card col-6 lbcard wd" id="card-lb-wd">
+      <div class="lbhead"><img class="lblogo" src="/static/wardrift.svg" alt=""><h2>Wardrift leaderboards</h2><span class="lbme" id="lbme-wd"></span></div>
+      <div class="tabs wd-tabs" id="lbt-wd"></div>
+      <div class="lbx wd" id="lbb-wd"><div class="lbmsg">loading…</div></div>
     </div>
 
     <!-- events -->
-    <div class="card col-4" id="card-activity">
+    <div class="card col-12" id="card-activity">
       <h2>Activity</h2>
       <div class="events" id="events"><div>—</div></div>
     </div>
 
     <!-- settings -->
-    <div class="card col-12">
+    <div class="card col-12" id="card-settings">
       <h2>Settings</h2>
-      <div class="form">
-        <div class="field">
-          <label>WDGWars API key (64-char hex) — <a href="https://wdgwars.pl/profile?gen=1#apikeys" target="_blank" rel="noopener">generate one ↗</a></label>
-          <div class="row">
-            <input type="password" id="f-key" placeholder="paste key…" autocomplete="off">
-            <button class="btn ghost" id="btn-testkey">Test</button>
+      <div class="sgrid">
+        <section class="sgroup wdg">
+          <div class="sgh"><img class="ic" src="/static/wdgwars.png" alt=""><div><b>WDGWars</b><span class="sub2">Upload key and stats</span></div><span class="sstat" id="sst-wdg"></span></div>
+          <div class="field">
+            <label for="f-key">API key</label>
+            <div class="row">
+              <input type="password" id="f-key" placeholder="paste key…" autocomplete="off">
+              <button class="btn ghost" id="btn-testkey" type="button">Test</button>
+            </div>
+            <span class="hint">The 64-character key from your WDGWars profile. <a href="https://wdgwars.pl/profile?gen=1#apikeys" target="_blank" rel="noopener">Get your key ↗</a></span>
+            <span class="msg" id="key-msg" style="margin-left:0"></span>
           </div>
-          <span class="msg" id="key-msg"></span>
-        </div>
-        <div class="field">
-          <label>Wardrift API key (optional) — aircraft and mesh nodes also upload to <a href="https://wardrift.net" target="_blank" rel="noopener">Wardrift ↗</a></label>
-          <input type="password" id="f-wdkey" placeholder="optional — paste wdk_ key…" autocomplete="off">
-        </div>
-        <div class="field">
-          <label>Wardrift account (optional) — shows your character, rank and the leaderboards here</label>
-          <div class="acct" id="wd-acct"></div>
-          <span class="hint">Your password goes to Wardrift once to sign in and is never saved. The app keeps only the sign-in session.</span>
-          <span class="msg" id="wd-acct-msg" style="margin-left:0"></span>
-        </div>
-        <div class="field">
-          <label>Upload device name — goes in uploaded file names so each PC's uploads can be told apart</label>
-          <input type="text" id="f-devlabel" maxlength="24" autocomplete="off">
-        </div>
-        <div class="field">
-          <label>ADS-B aircraft.json URL (running dump1090/tar1090)</label>
-          <input type="text" id="f-adsburl" placeholder="http://localhost:8080/data/aircraft.json">
-        </div>
-        <div class="field">
-          <label>Sources</label>
-          <div class="row">
-            <label class="switch"><input type="checkbox" id="f-adsb"> ADS-B (RTL-SDR or PortaPack)</label>
-            <label class="switch"><input type="checkbox" id="f-mesh"> Mesh</label>
+        </section>
+        <section class="sgroup wd">
+          <div class="sgh"><img class="ic" src="/static/wardrift.svg" alt=""><div><b>Wardrift</b><span class="sub2">Upload key and account</span></div><span class="sstat" id="sst-wd"></span></div>
+          <div class="field">
+            <label for="f-wdkey">Upload key</label>
+            <input type="password" id="f-wdkey" placeholder="optional — paste wdk_ key…" autocomplete="off">
+            <span class="hint">Sends your aircraft and mesh radios to Wardrift for XP and influence. <a href="https://wardrift.net" target="_blank" rel="noopener">wardrift.net ↗</a></span>
           </div>
-        </div>
-        <div class="field" style="grid-column:1/-1">
-          <label>Mesh devices — choose each radio's COM port (◆ = likely mesh board); MeshCore + Meshtastic read &amp; uploaded together</label>
-          <div id="mesh-devs"></div>
-          <button class="btn ghost" id="btn-adddev" type="button" style="margin-top:6px;padding:6px 12px">+ Add device</button>
-        </div>
-        <div class="field" style="grid-column:1/-1">
-          <label>Radio position — Wardrift only gives influence to radios that share a location, and most radios have no GPS. Set where your radio sits.</label>
+          <hr>
+          <div class="field">
+            <label for="f-wd-user">Account sign-in (optional)</label>
+            <div class="acct" id="wd-acct"></div>
+            <span class="hint">Shows your character, rank and the leaderboards here. Your password goes to Wardrift once and is never saved.</span>
+            <span class="msg" id="wd-acct-msg" style="margin-left:0"></span>
+          </div>
+        </section>
+        <section class="sgroup">
+          <div class="sgh"><span class="ic">📡</span><div><b>Capture</b><span class="sub2">What this PC collects and how it starts</span></div></div>
+          <div class="toggles">
+            <label class="toggle"><input type="checkbox" id="f-adsb"> ✈ ADS-B <small>RTL-SDR or PortaPack</small></label>
+            <label class="toggle"><input type="checkbox" id="f-mesh"> ◆ Mesh <small>MeshCore and Meshtastic</small></label>
+            <label class="toggle"><input type="checkbox" id="f-boot"> ⏻ Start with Windows</label>
+          </div>
+          <div class="field">
+            <label for="f-adsburl">ADS-B feed URL</label>
+            <input type="text" id="f-adsburl" placeholder="http://localhost:8080/data/aircraft.json">
+            <span class="hint">The aircraft.json from dump1090 or tar1090.</span>
+          </div>
+          <div class="field">
+            <label for="f-devlabel">Device name</label>
+            <input type="text" id="f-devlabel" maxlength="24" autocomplete="off">
+            <span class="hint">Goes in uploaded file names so each PC's uploads can be told apart.</span>
+          </div>
+        </section>
+        <section class="sgroup">
+          <div class="sgh"><span class="ic">◆</span><div><b>Mesh radios</b><span class="sub2">COM ports, discovery and reach</span></div></div>
+          <div class="field">
+            <label>Radios</label>
+            <div id="mesh-devs"></div>
+            <button class="btn ghost" id="btn-adddev" type="button" style="padding:6px 12px">+ Add radio</button>
+            <span class="hint">Pick each radio's COM port (◆ = likely mesh board). Every enabled radio is read and uploaded.</span>
+          </div>
+          <div class="two">
+            <div class="field">
+              <label for="f-advert">Discovery nudge (min)</label>
+              <input type="number" id="f-advert" min="0" max="1440" step="5" placeholder="60">
+              <span class="hint">MeshCore flood advert and Meshtastic NodeInfo request. 0 = off.</span>
+            </div>
+            <div class="field">
+              <label for="f-hops">Meshtastic hop limit</label>
+              <input type="number" id="f-hops" min="1" max="7" step="1" placeholder="7">
+              <span class="hint">1 to 7. Higher reaches more nodes.</span>
+            </div>
+          </div>
+        </section>
+        <section class="sgroup wide">
+          <div class="sgh"><span class="ic">📍</span><div><b>Radio position</b><span class="sub2">Wardrift only gives influence to radios that share a location, and most radios have no GPS</span></div></div>
           <div id="pos-radios"></div>
-          <div class="row">
-            <input type="text" id="f-pos-q" placeholder="Type an address or place, then press Find">
-            <button class="btn ghost" id="btn-pos-find" type="button">Find</button>
-            <button class="btn ghost" id="btn-pos-map" type="button">Pick on map</button>
+          <div class="field">
+            <label for="f-pos-q">Find a spot</label>
+            <div class="row">
+              <input type="text" id="f-pos-q" placeholder="Type an address or place, then press Find">
+              <button class="btn ghost" id="btn-pos-find" type="button">Find</button>
+              <button class="btn ghost" id="btn-pos-map" type="button">Pick on map</button>
+            </div>
           </div>
           <div id="pos-results"></div>
-          <div class="row" style="align-items:center;flex-wrap:wrap">
-            <label class="switch posopt" style="margin:0"><input type="checkbox" id="f-pos-coarse" checked> Coarse (about 1 km, keeps your exact spot private)</label>
+          <div class="row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <label class="toggle posopt"><input type="checkbox" id="f-pos-coarse" checked> Coarse <small>about 1 km, keeps your exact spot private</small></label>
             <span class="msg" id="pos-chosen">No spot chosen yet</span>
             <button class="btn" id="btn-pos-set" type="button" disabled>Set on my radios</button>
             <span class="msg" id="pos-msg"></span>
           </div>
-        </div>
-        <div class="field">
-          <label>Mesh discovery nudge every (minutes, 0 = off) — MeshCore flood advert / Meshtastic NodeInfo request</label>
-          <input type="number" id="f-advert" min="0" max="1440" step="5" placeholder="60">
-        </div>
-        <div class="field">
-          <label>Meshtastic hop limit (1–7, higher = more reach)</label>
-          <input type="number" id="f-hops" min="1" max="7" step="1" placeholder="7">
-        </div>
-        <div class="field">
-          <label>Startup</label>
-          <label class="switch"><input type="checkbox" id="f-boot"> Start automatically with Windows</label>
-        </div>
-        <div class="field" style="align-self:end">
-          <button class="btn" id="btn-save">Save settings</button>
-          <span class="msg" id="save-msg"></span>
-        </div>
-        <div class="field" style="grid-column:1/-1">
-          <label>Prerequisites — one-time setup checks</label>
+        </section>
+        <section class="sgroup wide">
+          <div class="sgh"><span class="ic">✓</span><div><b>Prerequisites</b><span class="sub2">One-time setup checks</span></div></div>
           <div class="checks" id="prereqs"><div class="empty">checking…</div></div>
-        </div>
+        </section>
+      </div>
+      <div class="savebar">
+        <span class="hint">Keys and settings take effect when saved.</span>
+        <span class="msg" id="save-msg"></span>
+        <button class="btn" id="btn-save" type="button">Save settings</button>
       </div>
     </div>
   </div>
@@ -679,6 +748,7 @@ function render(s){
   renderPrereqs(s.prereqs);
   renderLB(s);
   renderWdAccount(s);
+  renderSettingStatus(s);
   renderEvents(s.events);
   // settings (only fill when not being edited)
   const c=s.config||{};
@@ -1132,7 +1202,7 @@ function wdgCard(s){
           <div class="mtext"><span>New Wi-Fi cap (24 h)</span><span><b>${fmt(cap.used)}</b> / ${fmt(cap.cap)}</span></div></div>`:''}
         <div class="tiles" style="margin-top:10px">${tile(fmt(cr.balance),'Credits')}${tile(compact(st.reinforce_total),'Reinforced')}${tile(badges.length,'Badges')}</div></div>
       <div class="panel wide2"><h3>Next target <em>climb the boards</em></h3><div class="race">${raceRows(s)}</div></div>
-      <div class="panel wideall"><h3>Badges <em>${badges.length}</em></h3>
+      <div class="panel wideall grow"><h3>Badges <em>${badges.length}</em></h3>
         ${badges.length?`<div class="badgewrap" id="wdg-badges">${badges.map(b=>`<span class="badge">${escHtml(b)}</span>`).join('')}</div>`:'<div class="hint">No badges yet. Keep scanning.</div>'}</div>
     </div></div>`;
 }
@@ -1154,7 +1224,7 @@ function wdCard(s){
   if(wd.session!=='ok' || !ch.name){
     const expired=wd.session==='expired';
     return `<div class="plat wd">${head(escHtml(c.wardrift_username||'Wardrift'), c.has_wardrift_key?'uploading aircraft and mesh':'not set up yet')}
-      <div class="cta"><b>${expired?'Your Wardrift sign-in expired':'See your Wardrift character here'}</b>
+      <div class="cta fill"><b>${expired?'Your Wardrift sign-in expired':'See your Wardrift character here'}</b>
         <span>${expired?'Sign in again to bring back your rank, level and leaderboards.':'Sign in once to show your level, influence, rank and the leaderboards. Optional: uploads work without it.'}</span>
         <button class="btn gold sm" type="button" onclick="gotoSetting('#f-wd-user')">Sign in to Wardrift</button></div>
       ${wdReceipt(s)}</div>`;
@@ -1184,7 +1254,7 @@ function wdCard(s){
           ${tile(fmt(mi(lw.distance_km)),'Miles',tw.distance_km?'+'+fmt(mi(tw.distance_km))+' wk':'')}
           ${tile(fmt(me.towers_captured),'Towers')}
           ${tile(t.total?`${t.unlocked}/${t.total}`:'—','Titles')}</div></div>
-      <div class="panel wide2"><h3>Mesh <em>${(a.mesh||{}).owned_node_count!=null?fmt(a.mesh.owned_node_count)+' radio'+(a.mesh.owned_node_count==1?'':'s'):''}</em></h3>
+      <div class="panel wide2 grow"><h3>Mesh <em>${(a.mesh||{}).owned_node_count!=null?fmt(a.mesh.owned_node_count)+' radio'+(a.mesh.owned_node_count==1?'':'s'):''}</em></h3>
         ${metrics.length?`<div class="mx">${metrics.slice(0,4).map(m=>`<div class="tile"><b>${escHtml(m.value)}</b><span>${escHtml(m.label)}</span>
           ${m.delta?`<small style="color:${String(m.delta).startsWith('-')?'var(--red)':'var(--green)'}">${escHtml(m.delta)}</small>`:''}
           <div style="margin-top:4px">${sparkSVG(m.series,{h:22,color:'#ff39ff'})}</div></div>`).join('')}</div>`
@@ -1221,32 +1291,42 @@ function renderPlatforms(s){
 document.addEventListener('click',e=>{ const c=e.target.closest('.pchip[data-go]'); if(c) gotoSetting(c.dataset.go); });
 
 // ---- leaderboards ----
-const LB={plat:null, wdg:'today', wd:'all_time', cache:{}, loading:{}};
+const LB={wdg:'today', wd:'all_time', cache:{}, loading:{}};
 const WDG_TABS=[['today','Today'],['week','Week'],['all_time','All-time'],['gangs','Gangs'],['hunters','Hunters'],['cells','Cells']];
 const WD_TABS=[['daily','Daily'],['7d','7 Day'],['month','Month'],['season','Season'],['all_time','All Time']];
 const medal=n=>`<span class="medal ${n<=3?'m'+n:'mn'}">${n}</span>`;
-let _lbSig='';
-function renderLB(s, force){
+const _lbSig={wdg:'',wd:''};
+function fillBoard(p, tabs, cur, html, sig){
+  if(sig===_lbSig[p]) return; _lbSig[p]=sig;
+  $('#lbt-'+p).innerHTML=tabs?tabs.map(([k,l])=>`<div class="tab${k===cur?' active':''}" data-t="${k}">${l}</div>`).join(''):'';
+  const box=$('#lbb-'+p), view=cur||'', keep=box.dataset.view===view?box.scrollTop:0;
+  box.innerHTML=html; box.dataset.view=view; box.scrollTop=keep;
+}
+function renderLB(s){
   const c=s.config||{}, st=s.stats||{}, wd=s.wardrift||{}, lb=s.leaderboard||{};
-  const wdgOk=!!c.has_api_key && Object.keys(lb).length>0, wdOk=wd.session==='ok';
-  if(!LB.plat || (LB.plat==='wdg'&&!wdgOk) || (LB.plat==='wd'&&!wdOk)) LB.plat=wdgOk?'wdg':(wdOk?'wd':null);
-  const wdData=LB.wd==='all_time'?wd.leaderboard:LB.cache[LB.wd];
-  const sig=JSON.stringify([LB.plat,LB.wdg,LB.wd,wdgOk,wdOk,s.leaderboard_ts,st.user_id,st.gang_id,(wdData||{}).fetched,(wdData||{}).error]);
-  if(!force && sig===_lbSig) return; _lbSig=sig;
-  const seg=$("#lb-seg"), tabs=$("#lb-tabs"), box=$("#lb-box");
-  const segBtn=(p,img,name)=>`<div class="${p}${LB.plat===p?' active':''}" data-p="${p}"><img src="${img}" alt="">${name}</div>`;
-  seg.innerHTML=(wdgOk&&wdOk)?segBtn('wdg','/static/wdgwars.png','WDGWARS')+segBtn('wd','/static/wardrift.svg','WARDRIFT')
-    :LB.plat?segBtn(LB.plat, LB.plat==='wdg'?'/static/wdgwars.png':'/static/wardrift.svg', LB.plat==='wdg'?'WDGWARS':'WARDRIFT'):'';
-  seg.style.display=LB.plat?'':'none';
-  if(!LB.plat){ tabs.innerHTML=''; tabs.className='tabs';
-    box.innerHTML=`<div class="lbmsg">Leaderboards show here once you add a WDGWars key or sign in to Wardrift in Settings.</div>`; return; }
-  const list=LB.plat==='wdg'?WDG_TABS:WD_TABS, cur=LB.plat==='wdg'?LB.wdg:LB.wd;
-  tabs.className='tabs '+(LB.plat==='wdg'?'wdg-tabs':'wd-tabs');
-  tabs.innerHTML=list.map(([k,l])=>`<div class="tab${k===cur?' active':''}" data-t="${k}">${l}</div>`).join('');
-  const view=LB.plat+':'+cur, keep=box.dataset.view===view?box.scrollTop:0;
-  box.className='lbx '+LB.plat;
-  box.innerHTML=LB.plat==='wdg'?wdgRows(lb,st):wdRows(wdData,wd);
-  box.dataset.view=view; box.scrollTop=keep;
+  const wdgShow=!!c.has_api_key, wdShow=!!(c.has_wardrift_key||c.has_wardrift_session);
+  const both=wdgShow&&wdShow;
+  const cw=$('#card-lb-wdg'), cd=$('#card-lb-wd');
+  cw.style.display=(wdgShow||!wdShow)?'':'none'; cd.style.display=wdShow?'':'none';
+  cw.classList.toggle('col-6',both); cw.classList.toggle('col-12',!both);
+  cd.classList.toggle('col-6',both); cd.classList.toggle('col-12',!both);
+  // WDGWars
+  const r=st.your_rank||{};
+  $('#lbme-wdg').innerHTML=st.username&&r[LB.wdg]?`you <b>#${r[LB.wdg]}</b>`:'';
+  if(!wdgShow) fillBoard('wdg',null,'',`<div class="lbmsg">${wdShow?'Add your WDGWars API key in Settings to see these boards.':'Leaderboards show here once you add a WDGWars or Wardrift key in Settings.'}</div>`,'none'+wdShow);
+  else if(!Object.keys(lb).length) fillBoard('wdg',WDG_TABS,LB.wdg,'<div class="lbmsg">loading…</div>','load'+LB.wdg);
+  else fillBoard('wdg',WDG_TABS,LB.wdg,wdgRows(lb,st),JSON.stringify([LB.wdg,s.leaderboard_ts,st.user_id,st.gang_id]));
+  // Wardrift
+  if(!wdShow) return;
+  const me=(wd.leaderboard||{}).me||{};
+  const data=LB.wd==='all_time'?wd.leaderboard:LB.cache[LB.wd];
+  $('#lbme-wd').innerHTML=wd.session==='ok'&&LB.wd==='all_time'&&me.rank?`you <b>#${me.rank}</b>`:((data||{}).me||{}).rank?`you <b>#${data.me.rank}</b>`:'';
+  if(wd.session!=='ok'){
+    const exp=wd.session==='expired';
+    fillBoard('wd',null,'',`<div class="cta lbcenter"><b>${exp?'Your Wardrift sign-in expired':'Sign in to see the Wardrift boards'}</b>
+      <span>Daily, weekly, monthly, season and all-time rankings with your spot on each.</span>
+      <button class="btn gold sm" type="button" onclick="gotoSetting('#f-wd-user')">Sign in to Wardrift</button></div>`,'cta'+exp);
+  } else fillBoard('wd',WD_TABS,LB.wd,wdRows(data,wd),JSON.stringify([LB.wd,(data||{}).fetched,(data||{}).error]));
 }
 function wdgRows(lb,st){
   const tab=LB.wdg, rows=lb[tab]||[];
@@ -1295,14 +1375,23 @@ async function loadWdBoard(tf){
   try{ LB.cache[tf]=await api('/api/wardrift/leaderboard?timeframe='+tf); }
   catch(e){ LB.cache[tf]={error:'offline'}; }
   LB.loading[tf]=false;
-  if(window._lastState) renderLB(window._lastState,true);
+  if(window._lastState) renderLB(window._lastState);
 }
-$("#lb-seg").addEventListener('click',e=>{ const b=e.target.closest('[data-p]'); if(!b) return; LB.plat=b.dataset.p; if(window._lastState) renderLB(window._lastState,true); });
-$("#lb-tabs").addEventListener('click',e=>{ const t=e.target.closest('[data-t]'); if(!t) return;
-  if(LB.plat==='wdg') LB.wdg=t.dataset.t; else { LB.wd=t.dataset.t; if(LB.wd!=='all_time') loadWdBoard(LB.wd); }
-  if(window._lastState) renderLB(window._lastState,true); });
+$("#lbt-wdg").addEventListener('click',e=>{ const t=e.target.closest('[data-t]'); if(!t) return;
+  LB.wdg=t.dataset.t; if(window._lastState) renderLB(window._lastState); });
+$("#lbt-wd").addEventListener('click',e=>{ const t=e.target.closest('[data-t]'); if(!t) return;
+  LB.wd=t.dataset.t; if(LB.wd!=='all_time') loadWdBoard(LB.wd); if(window._lastState) renderLB(window._lastState); });
 
 // ---- Wardrift sign-in ----
+function renderSettingStatus(s){
+  const c=s.config||{}, st=s.stats||{}, wd=s.wardrift||{};
+  const a=$('#sst-wdg'), b=$('#sst-wd');
+  a.className='sstat '+(c.has_api_key?(st.username?'ok':'warn'):'');
+  a.textContent=c.has_api_key?(st.username?'✓ '+st.username:'key set'):'no key';
+  const parts=[]; if(c.has_wardrift_key) parts.push('key set'); if(wd.session==='ok') parts.push('signed in'); else if(wd.session==='expired') parts.push('sign-in expired');
+  b.className='sstat '+(parts.length?(wd.session==='expired'?'warn':'ok'):'');
+  b.textContent=parts.length?'✓ '+parts.join(' · '):'not set up';
+}
 let _acctSig='';
 function renderWdAccount(s){
   const c=s.config||{}, wd=s.wardrift||{};
