@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WDGWars Uploader</title>
-<link rel="icon" href="/static/wdgwars.png">
+<title>Wardrive Uploader</title>
+<link rel="icon" href="/static/tpp.png">
 <style>
 :root{
   --bg:#05070a; --bg2:#0a0f16; --panel:#0b1119cc;
@@ -55,6 +55,10 @@ h1{font-size:20px;letter-spacing:3px;margin:0;font-weight:700;
 .spacer{flex:1}
 .hstat{display:flex;flex-direction:column;align-items:flex-end;font-size:11px;color:var(--muted)}
 .hstat b{color:var(--cyan);font-size:14px;letter-spacing:1px}
+.hlinks{display:flex;gap:8px;align-items:center}
+.hlink{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:30px;padding:4px 12px;font-size:11px;letter-spacing:1px;color:var(--muted);background:#070c12;white-space:nowrap}
+.hlink:hover{color:var(--cyan);border-color:var(--cyan-dim);text-decoration:none}
+.hlink img{width:22px;height:22px;object-fit:contain}
 
 /* layout */
 .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:14px}
@@ -363,12 +367,16 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
     <div class="brand">
       <div class="logo"></div>
       <div>
-        <h1>WDGWARS UPLOADER</h1>
+        <h1>WARDRIVE UPLOADER</h1>
         <div class="sub">WDGWARS + WARDRIFT // ADS-B // MESH</div>
       </div>
     </div>
     <div class="chips" id="pchips"></div>
     <div class="spacer"></div>
+    <div class="hlinks">
+      <a class="hlink" href="https://discord.gg/thepirates" target="_blank" rel="noopener" title="The Pirates' Plunder"><img src="/static/tpp.png" alt="">TPP</a>
+      <a class="hlink" href="https://rocketgod.dev" target="_blank" rel="noopener">rocketgod.dev ↗</a>
+    </div>
     <div class="hstat"><span>OPERATOR</span><b id="op-name">—</b></div>
     <div class="hstat"><span>UPTIME</span><b id="uptime">—</b></div>
     <div class="hstat"><span>LINK</span><b id="link">…</b></div>

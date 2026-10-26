@@ -251,7 +251,7 @@ class UploaderApp:
 def open_window(url: str) -> None:
     """Native dashboard window (separate process). Requires pywebview."""
     import webview
-    webview.create_window(APP_NAME, url, width=1300, height=880, min_size=(900, 640))
+    webview.create_window("Wardrive Uploader", url, width=1300, height=880, min_size=(900, 640))
     webview.start()
 
 
