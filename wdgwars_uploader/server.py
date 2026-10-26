@@ -169,6 +169,10 @@ class _Handler(BaseHTTPRequestHandler):
             elif path == "/api/config":
                 self.app.update_config(body)
                 self._send_json({"ok": True, "config": self.app.core.state.config_summary})
+            elif path == "/api/update/check":
+                self._send_json(self.app.updater.check())
+            elif path == "/api/update/install":
+                self._send_json(self.app.updater.install())
             elif path == "/api/wardrift/sign-in":
                 self._send_json(self.app.wardrift_sign_in(body.get("username") or "",
                                                           body.get("password") or ""))

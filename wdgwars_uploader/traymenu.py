@@ -344,6 +344,8 @@ class TrayPopup:
         tk.Frame(body, bg=LINE, height=1).pack(fill="x", pady=(self._px(4), 0))
         items = tk.Frame(body, bg=BG)
         items.pack(fill="x", pady=self._px(4))
+        if m.get("update"):
+            self._item(items, "⬆", f"Update to {m['update']}", "update", accent=GOLD, bold=True)
         self._item(items, "▲", "Upload now", "upload", accent=CYAN, bold=True)
         self._item(items, "◉", "Open dashboard", "dashboard")
         self._item(items, "⌖", "Live map", "map")

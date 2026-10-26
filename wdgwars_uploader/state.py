@@ -106,6 +106,7 @@ class LiveState:
 
         # Prerequisites
         self.prereqs: dict[str, Any] = {}
+        self.update_status: dict[str, Any] = {}
 
         # Config summary (never contains the key itself)
         self.config_summary: dict[str, Any] = {}
@@ -450,6 +451,7 @@ class LiveState:
                                               for k in ("aircraft", "xp", "influence", "currency")}},
                 "leaderboard_ts": self.leaderboard_ts,
                 "prereqs": self.prereqs,
+                "update": self.update_status,
                 "config": self.config_summary,
                 "serial_ports": self.serial_ports,
                 "events": list(self._events)[:100],

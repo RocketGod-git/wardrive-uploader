@@ -223,6 +223,14 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
 .sheet .maplink:hover{background:rgba(0,229,255,.1)}
 .sheet .spin{color:var(--muted);font-size:12px;padding:8px 0}
 .tag2{display:inline-block;padding:2px 10px;border-radius:20px;font-size:11px;border:1px solid currentColor}
+.updbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:-4px 0 16px;padding:10px 16px;border-radius:12px;
+  border:1px solid rgba(255,226,0,.45);background:linear-gradient(90deg,rgba(255,226,0,.12),rgba(255,57,255,.07) 60%,transparent);
+  box-shadow:0 0 22px rgba(255,226,0,.12);font-size:12px}
+.updbar b{color:var(--wd)} .updbar .muted{color:var(--muted)}
+.updbar .meter{flex:1;min-width:140px;max-width:320px;height:6px}
+.updbar .spacer{flex:1}
+.updrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:12px}
+.updrow .ver{font-size:18px;font-weight:800;color:#eef;letter-spacing:1px}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:50;
   background:#0a141c;border:1px solid var(--cyan);color:var(--cyan);padding:10px 18px;border-radius:8px;
   box-shadow:0 0 22px rgba(0,229,255,.35);opacity:0;transition:.3s;letter-spacing:1px}
@@ -425,6 +433,7 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
     <div class="hstat"><span>UPTIME</span><b id="uptime">—</b></div>
     <div class="hstat"><span>LINK</span><b id="link">…</b></div>
   </header>
+  <div class="updbar" id="updbar" style="display:none"></div>
 
   <div class="grid">
     <!-- devices -->
@@ -598,6 +607,16 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
           </div>
         </section>
         <section class="sgroup wide">
+          <div class="sgh"><span class="ic">⬆</span><div><b>Updates</b><span class="sub2">Checked when the app starts and every 6 hours</span></div><span class="sstat" id="sst-upd"></span></div>
+          <div class="updrow">
+            <span class="ver" id="upd-ver"></span>
+            <span class="hint" id="upd-state"></span>
+            <span style="flex:1"></span>
+            <button class="btn ghost" id="btn-upd-check" type="button">Check for updates</button>
+            <button class="btn gold" id="btn-upd-install" type="button" style="display:none">Install update</button>
+          </div>
+        </section>
+        <section class="sgroup wide">
           <div class="sgh"><span class="ic">✓</span><div><b>Prerequisites</b><span class="sub2">One-time setup checks</span></div></div>
           <div class="checks" id="prereqs"><div class="empty">checking…</div></div>
         </section>
@@ -753,6 +772,7 @@ function render(s){
   renderLB(s);
   renderWdAccount(s);
   renderSettingStatus(s);
+  renderUpdate(s.update||{});
   renderEvents(s.events);
   // settings (only fill when not being edited)
   const c=s.config||{};
@@ -1396,6 +1416,42 @@ function renderSettingStatus(s){
   b.className='sstat '+(parts.length?(wd.session==='expired'?'warn':'ok'):'');
   b.textContent=parts.length?'✓ '+parts.join(' · '):'not set up';
 }
+// ---- updates ----
+function agoText(ts){ if(!ts) return 'not checked yet'; const s=Math.max(0,Date.now()/1000-ts);
+  return 'checked '+(s<60?'just now':s<3600?Math.round(s/60)+' min ago':Math.round(s/3600)+' h ago'); }
+let _updSig='';
+function renderUpdate(u){
+  const sig=JSON.stringify([u.available,u.latest,u.phase,u.progress,u.error,u.can_install,u.checked,Math.floor(Date.now()/30000)]);
+  if(sig===_updSig) return; _updSig=sig;
+  const bar=$("#updbar"), busy=u.phase==='downloading'||u.phase==='installing';
+  if(u.available||busy){
+    bar.style.display='';
+    if(u.phase==='downloading') bar.innerHTML=`<span>⬆ Downloading <b>${escHtml(u.latest)}</b>… ${u.progress||0}%</span>
+      <div class="meter"><div style="width:${u.progress||0}%;background:linear-gradient(90deg,#8a7a00,var(--wd))"></div></div>`;
+    else if(u.phase==='installing') bar.innerHTML=`<span>⬆ Installing <b>${escHtml(u.latest)}</b>. The app closes, installs and reopens by itself. Windows asks for permission once.</span>`;
+    else bar.innerHTML=`<span>⬆ <b>Wardrive Uploader ${escHtml(u.latest)}</b> is ready <span class="muted">(you have ${escHtml(u.current)})</span></span>
+      <span class="spacer"></span>
+      ${u.page?`<a href="${escHtml(u.page)}" target="_blank" rel="noopener">What's new ↗</a>`:''}
+      ${u.can_install?`<button class="btn gold sm" type="button" onclick="installUpdate()">Install update</button>`
+                     :`<a class="btn gold sm" href="${escHtml(u.page||'#')}" target="_blank" rel="noopener">Download</a>`}`;
+  } else bar.style.display='none';
+  $("#upd-ver").textContent='Version '+(u.current||'');
+  const st=$("#upd-state"), chip=$("#sst-upd");
+  if(u.phase==='checking') st.textContent='checking…';
+  else if(busy) st.textContent=u.phase==='downloading'?`downloading ${u.latest}… ${u.progress||0}%`:'installing…';
+  else if(u.error) st.textContent=u.error;
+  else if(u.available) st.textContent=`${u.latest} is available · ${agoText(u.checked)}`;
+  else st.textContent=u.checked?`Up to date · ${agoText(u.checked)}`:'not checked yet';
+  chip.className='sstat '+(u.error||u.available?'warn':u.checked?'ok':'');
+  chip.textContent=u.error?'check failed':u.available?'update ready':u.checked?'✓ up to date':'';
+  $("#btn-upd-install").style.display=(u.available&&u.can_install&&!busy)?'':'none';
+  $("#btn-upd-check").disabled=busy||u.phase==='checking';
+}
+async function installUpdate(){ toast('Downloading update…'); await api('/api/update/install','POST',{}); _updSig=''; poll(); }
+$("#btn-upd-check").onclick=async()=>{ $("#upd-state").textContent='checking…';
+  const r=await api('/api/update/check','POST',{});
+  toast(r.available?('Update '+r.latest+' is available'):(r.error?'Update check failed':'You are up to date')); _updSig=''; poll(); };
+$("#btn-upd-install").onclick=installUpdate;
 let _acctSig='';
 function renderWdAccount(s){
   const c=s.config||{}, wd=s.wardrift||{};

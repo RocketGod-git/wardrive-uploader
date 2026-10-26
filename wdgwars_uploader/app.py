@@ -23,7 +23,7 @@ from pathlib import Path
 import pystray
 from PIL import Image, ImageDraw
 
-from . import APP_NAME, __version__, adsb, autostart, mayhem, traymenu, watchdog
+from . import APP_NAME, __version__, adsb, autostart, mayhem, traymenu, updater, watchdog
 from .config import Config, INTERVAL_CHOICES_HOURS, config_dir
 from .core import UploaderCore
 from .logutil import setup_logging
@@ -56,6 +56,8 @@ class UploaderApp:
         self.scheduler = Scheduler(self.cfg, self._run_cycle)
         self.poller = Poller(self.core)
         self.server = DashboardServer(self)
+        self.updater = updater.Updater(on_quit=self.quit, on_event=self.state.event)
+        self.state.update_status = self.updater.status
         self._icon: pystray.Icon | None = None
         self._stop = threading.Event()
 
@@ -78,6 +80,7 @@ class UploaderApp:
             self.open_dashboard()
 
         watchdog.spawn(os.getpid())   # relaunch on an unexpected exit
+        threading.Thread(target=self._update_loop, name="wdgw-updates", daemon=True).start()
 
         self._popup = traymenu.TrayPopup("Wardrive Uploader", __version__, self._tray_model, {
             "upload": self.trigger_upload,
@@ -87,6 +90,7 @@ class UploaderApp:
             "boot": self._toggle_boot,
             "folder": self._open_folder,
             "tpp": lambda: webbrowser.open("https://discord.gg/thepirates"),
+            "update": self.updater.install,
             "site": lambda: webbrowser.open("https://rocketgod.dev"),
             "quit": self.quit,
         })
@@ -105,6 +109,25 @@ class UploaderApp:
                 self._icon.icon = self._tray_icon(active, self.state.upload_in_progress)
                 self._icon.title = f"{APP_NAME} — {self._status_text()}"
             self._stop.wait(4.0)
+
+    def _update_loop(self) -> None:
+        """Check for a new release shortly after start, then every few hours."""
+        if self._stop.wait(45):
+            return
+        told = ""
+        while True:
+            st = self.updater.check()
+            if st.get("available") and st.get("latest") != told:
+                told = st["latest"]
+                self.state.event(f"Update {told} is available")
+                if self._icon:
+                    try:
+                        self._icon.notify(f"Version {told} is ready. Install it from the dashboard or the tray menu.",
+                                          "Wardrive Uploader update")
+                    except Exception:
+                        pass
+            if self._stop.wait(updater.CHECK_EVERY):
+                return
 
     # -- tray --------------------------------------------------------------
     @staticmethod
@@ -151,7 +174,9 @@ class UploaderApp:
                           "color": traymenu.GOLD, "rank": f"#{me['rank']} global" if me.get("rank") else ""})
         return {"adsb": adsb_row, "mesh": mesh_row, "queue": queue_row, "next": next_row,
                 "games": games, "activity": "uploading" if busy else "online",
-                "interval": int(self.cfg.get("interval_hours", 4)), "boot": autostart.is_enabled()}
+                "interval": int(self.cfg.get("interval_hours", 4)), "boot": autostart.is_enabled(),
+                "update": (self.updater.status.get("latest") if self.updater.status.get("available")
+                           and self.updater.status.get("can_install") else "")}
 
     def _status_text(self) -> str:
         d = self.core.last_detect
