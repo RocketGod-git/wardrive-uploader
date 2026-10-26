@@ -1443,12 +1443,13 @@ let _updSig='';
 function renderUpdate(u){
   const sig=JSON.stringify([u.available,u.latest,u.phase,u.progress,u.error,u.can_install,u.checked,Math.floor(Date.now()/30000)]);
   if(sig===_updSig) return; _updSig=sig;
-  const bar=$("#updbar"), busy=u.phase==='downloading'||u.phase==='installing';
+  const bar=$("#updbar"), busy=['downloading','approve','installing'].includes(u.phase);
   if(u.available||busy){
     bar.style.display='';
     if(u.phase==='downloading') bar.innerHTML=`<span>⬆ Downloading <b>${escHtml(u.latest)}</b>… ${u.progress||0}%</span>
       <div class="meter"><div style="width:${u.progress||0}%;background:linear-gradient(90deg,#8a7a00,var(--wd))"></div></div>`;
-    else if(u.phase==='installing') bar.innerHTML=`<span>⬆ Installing <b>${escHtml(u.latest)}</b>. The app closes, installs and reopens by itself. Windows asks for permission once.</span>`;
+    else if(u.phase==='approve') bar.innerHTML=`<span>⬆ <b>${escHtml(u.latest)}</b> is downloaded and verified. Approve the Windows prompt to install it.</span>`;
+    else if(u.phase==='installing') bar.innerHTML=`<span>⬆ Installing <b>${escHtml(u.latest)}</b>. The app closes now; the installer shows its progress and reopens the app when it is done.</span>`;
     else bar.innerHTML=`<span>⬆ <b>Wardrive Uploader ${escHtml(u.latest)}</b> is ready <span class="muted">(you have ${escHtml(u.current)})</span></span>
       <span class="spacer"></span>
       ${u.page?`<a href="${escHtml(u.page)}" target="_blank" rel="noopener">What's new ↗</a>`:''}
@@ -1458,7 +1459,7 @@ function renderUpdate(u){
   $("#upd-ver").textContent='Version '+(u.current||'');
   const st=$("#upd-state"), chip=$("#sst-upd");
   if(u.phase==='checking') st.textContent='checking…';
-  else if(busy) st.textContent=u.phase==='downloading'?`downloading ${u.latest}… ${u.progress||0}%`:'installing…';
+  else if(busy) st.textContent=u.phase==='downloading'?`downloading ${u.latest}… ${u.progress||0}%`:u.phase==='approve'?'waiting for the Windows prompt…':'installing…';
   else if(u.error) st.textContent=u.error;
   else if(u.available) st.textContent=`${u.latest} is available · ${agoText(u.checked)}`;
   else st.textContent=u.checked?`Up to date · ${agoText(u.checked)}`:'not checked yet';

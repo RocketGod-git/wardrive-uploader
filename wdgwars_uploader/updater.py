@@ -1,10 +1,11 @@
 """Update check and one-click install from the GitHub releases page.
 
 The check compares the latest release tag with this version. Installing
-downloads the MSI, verifies it against the SHA-256 digest GitHub publishes for
-the asset, then hands over to a small PowerShell helper that waits for the app
-to close, runs the installer (Windows asks for permission once) and starts the
-app again. If the install fails or is declined, the old version starts again.
+downloads the MSI and verifies it against the SHA-256 digest GitHub publishes
+for the asset. Windows then asks for permission while the app is still open; if
+granted, an elevated helper waits for the app to close, runs the installer with
+its progress bar showing and starts the app again as the normal user. If the
+prompt is declined the app stays open and nothing changes.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ import json
 import logging
 import os
 import re
-import subprocess
+import ctypes
 import sys
 import tempfile
 import threading
@@ -33,9 +34,8 @@ REPO = "RocketGod-git/wardrive-uploader"
 API = f"https://api.github.com/repos/{REPO}/releases/latest"
 UA = f"wardrive-uploader/{__version__} (+https://github.com/{REPO})"
 CHECK_EVERY = 6 * 3600
-_NO_WINDOW = 0x08000000
-_DETACHED = 0x00000008 | 0x00000200   # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
-
+# Runs elevated (started through the Windows permission prompt). It restarts the
+# app through Explorer so the app runs as the normal user, not as admin.
 _HELPER = r"""
 param([int]$AppPid, [string]$Msi, [string]$Exe, [string]$Result)
 $ErrorActionPreference = 'SilentlyContinue'
@@ -44,14 +44,37 @@ $name = [IO.Path]::GetFileNameWithoutExtension($Exe)
 $t = 0
 while ((Get-Process -Name $name) -and $t -lt 30) { Start-Sleep 1; $t++ }
 Get-Process -Name $name | Stop-Process -Force
+Start-Sleep 1
 $code = -1
 try {
-  $p = Start-Process msiexec.exe -ArgumentList "/i `"$Msi`" /passive /norestart" -Verb RunAs -Wait -PassThru -ErrorAction Stop
+  $p = Start-Process msiexec.exe -ArgumentList "/i `"$Msi`" /passive /norestart" -Wait -PassThru -ErrorAction Stop
   $code = $p.ExitCode
-} catch { $code = 1602 }
+} catch { $code = -2 }
 Set-Content -Path $Result -Value "{`"code`": $code, `"msi`": `"$([IO.Path]::GetFileName($Msi))`"}" -Encoding ASCII
-Start-Process -FilePath $Exe
+Start-Process explorer.exe -ArgumentList "`"$Exe`""
 """
+
+
+class _ShellExecuteInfo(ctypes.Structure):
+    _fields_ = [("cbSize", ctypes.c_ulong), ("fMask", ctypes.c_ulong), ("hwnd", ctypes.c_void_p),
+                ("lpVerb", ctypes.c_wchar_p), ("lpFile", ctypes.c_wchar_p), ("lpParameters", ctypes.c_wchar_p),
+                ("lpDirectory", ctypes.c_wchar_p), ("nShow", ctypes.c_int), ("hInstApp", ctypes.c_void_p),
+                ("lpIDList", ctypes.c_void_p), ("lpClass", ctypes.c_wchar_p), ("hkeyClass", ctypes.c_void_p),
+                ("dwHotKey", ctypes.c_ulong), ("hIcon", ctypes.c_void_p), ("hProcess", ctypes.c_void_p)]
+
+
+def _run_elevated(exe: str, params: str) -> int:
+    """Start ``exe`` through the Windows permission prompt. Returns 0 once it is
+    running, or the Windows error code (1223 = the prompt was declined)."""
+    info = _ShellExecuteInfo()
+    info.cbSize = ctypes.sizeof(info)
+    info.fMask = 0x00000040 | 0x00000400   # SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC
+    info.lpVerb, info.lpFile, info.lpParameters, info.nShow = "runas", exe, params, 0
+    if not ctypes.windll.shell32.ShellExecuteExW(ctypes.byref(info)):
+        return ctypes.GetLastError() or 1
+    if info.hProcess:
+        ctypes.windll.kernel32.CloseHandle(ctypes.c_void_p(info.hProcess))
+    return 0
 
 
 def parse_version(v: str) -> tuple[int, ...]:
@@ -112,10 +135,17 @@ class Updater:
     def _install(self) -> None:
         try:
             msi = self._download()
-            self.status.update(phase="installing", progress=100)
+            self.status.update(phase="approve", progress=100)
+            err = self._launch_helper(msi)
+            if err == 1223:
+                self.status.update(phase="idle", error="update canceled at the Windows prompt")
+                self.on_event("Update canceled at the Windows prompt")
+                return
+            if err:
+                raise OSError(f"could not start the installer (Windows error {err})")
+            self.status.update(phase="installing")
             self.on_event(f"Installing update {self.status['latest']}; the app will reopen when it is done")
-            self._launch_helper(msi)
-            time.sleep(0.5)
+            time.sleep(2.5)   # let the dashboard show the last step before the app closes
             self.on_quit()
         except Exception as e:  # noqa: BLE001
             log.exception("update failed")
@@ -146,14 +176,13 @@ class Updater:
             raise ValueError("download did not match the published checksum")
         return out
 
-    def _launch_helper(self, msi: Path) -> None:
+    def _launch_helper(self, msi: Path) -> int:
         helper = Path(tempfile.gettempdir()) / "wardrive-uploader-update.ps1"
         helper.write_text(_HELPER, encoding="utf-8")
-        cmd = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden",
-               "-File", str(helper), "-AppPid", str(os.getpid()), "-Msi", str(msi),
-               "-Exe", sys.executable, "-Result", str(config_dir() / "update_result.json")]
-        subprocess.Popen(cmd, creationflags=_NO_WINDOW | _DETACHED, close_fds=True,
-                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        result = config_dir() / "update_result.json"
+        params = (f'-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{helper}" '
+                  f'-AppPid {os.getpid()} -Msi "{msi}" -Exe "{sys.executable}" -Result "{result}"')
+        return _run_elevated("powershell.exe", params)
 
     def _report_last_install(self) -> None:
         """After an update the helper leaves its result; say how it went."""
@@ -168,5 +197,7 @@ class Updater:
             self.on_event(f"Updated to {__version__}")
         elif code == 1602:
             self.on_event("Update canceled; still on " + __version__)
+        elif code == 1618:
+            self.on_event("Another install was running, so the update waited; try Install update again")
         else:
             self.on_event(f"Update did not install (installer code {code}); still on {__version__}")
