@@ -13,7 +13,7 @@ import requests
 from . import __version__
 
 URL = "https://nominatim.openstreetmap.org/search"
-UA = f"wdgwars-uploader/{__version__} (+https://github.com/RocketGod-git/wdgwars-uploader)"
+UA = f"wdgwars-uploader/{__version__} (+https://github.com/RocketGod-git/wardrive-uploader)"
 
 
 def search(query: str, limit: int = 5) -> list[dict[str, Any]]:

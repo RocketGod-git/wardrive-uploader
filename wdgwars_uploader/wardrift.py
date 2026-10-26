@@ -36,7 +36,7 @@ from . import __version__
 from .config import upload_file_name
 
 BASE = "https://wardrift.net/v1"
-UA = f"wdgwars-uploader/{__version__} (+https://github.com/RocketGod-git/wdgwars-uploader)"
+UA = f"wdgwars-uploader/{__version__} (+https://github.com/RocketGod-git/wardrive-uploader)"
 CHUNK = 5000   # aircraft per file, well under the 10 MiB / 200,000-record limits
 # The mesh endpoint sits behind a Cloudflare rule that refuses non-browser
 # user agents (error 1010).

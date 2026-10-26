@@ -12,7 +12,7 @@
 
     <Icon Id="AppIcon" SourceFile="$(var.ExeSrc)" />
     <Property Id="ARPPRODUCTICON" Value="AppIcon" />
-    <Property Id="ARPHELPLINK" Value="https://github.com/RocketGod-git/wdgwars-mesh-adsb-uploader" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/RocketGod-git/wardrive-uploader" />
     <Property Id="ARPNOMODIFY" Value="1" />
 
     <Directory Id="TARGETDIR" Name="SourceDir">
