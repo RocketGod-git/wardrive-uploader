@@ -5,6 +5,9 @@ from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 hiddenimports = [
     "pystray._win32",
     "PIL._tkinter_finder",
+    "PIL.ImageTk",
+    "tkinter",
+    "tkinter.font",
 ]
 hiddenimports += collect_submodules("meshcore")
 hiddenimports += collect_submodules("serial")

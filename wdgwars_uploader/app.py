@@ -23,7 +23,7 @@ from pathlib import Path
 import pystray
 from PIL import Image, ImageDraw
 
-from . import APP_NAME, __version__, adsb, autostart, mayhem, watchdog
+from . import APP_NAME, __version__, adsb, autostart, mayhem, traymenu, watchdog
 from .config import Config, INTERVAL_CHOICES_HOURS, config_dir
 from .core import UploaderCore
 from .logutil import setup_logging
@@ -79,7 +79,19 @@ class UploaderApp:
 
         watchdog.spawn(os.getpid())   # relaunch on an unexpected exit
 
-        self._icon = pystray.Icon(APP_NAME, _make_icon(True), APP_NAME, menu=self._menu())
+        self._popup = traymenu.TrayPopup("Wardrive Uploader", __version__, self._tray_model, {
+            "upload": self.trigger_upload,
+            "dashboard": self.open_dashboard,
+            "map": lambda: self.server.url and webbrowser.open(self.server.url.rstrip("/") + "/map"),
+            "interval": self.set_interval,
+            "boot": self._toggle_boot,
+            "folder": self._open_folder,
+            "tpp": lambda: webbrowser.open("https://discord.gg/thepirates"),
+            "site": lambda: webbrowser.open("https://rocketgod.dev"),
+            "quit": self.quit,
+        })
+        self._icon = traymenu.TrayIcon(APP_NAME, self._tray_icon(True, False), APP_NAME,
+                                       menu=self._menu(), on_right_click=self._popup.show)
         self._icon.run()  # blocks main thread until stop()
 
     def _status_loop(self) -> None:
@@ -90,11 +102,57 @@ class UploaderApp:
             if self._icon:
                 det = self.core.last_detect
                 active = bool(det and (det.adsb_radio_present or det.mesh_present)) and bool(self.cfg.get("api_key"))
-                self._icon.icon = _make_icon(active, self.state.upload_in_progress)
+                self._icon.icon = self._tray_icon(active, self.state.upload_in_progress)
                 self._icon.title = f"{APP_NAME} — {self._status_text()}"
             self._stop.wait(4.0)
 
     # -- tray --------------------------------------------------------------
+    @staticmethod
+    def _tray_icon(active: bool, busy: bool) -> Image.Image:
+        return traymenu.tray_image("busy" if busy else ("on" if active else "")) or _make_icon(active, busy)
+
+    def _tray_model(self) -> dict:
+        """Live values for the styled tray menu."""
+        s = self.state.snapshot()
+        dev, live, pend = s.get("devices") or {}, s.get("live") or {}, s.get("pending") or {}
+        sdr, pp, mesh = dev.get("rtlsdr") or {}, dev.get("portapack") or {}, dev.get("mesh") or {}
+        air = live.get("aircraft", 0)
+        if sdr.get("present"):
+            adsb_row = ("warn" if sdr.get("driver_ok") is False else "on", "ADS-B", f"RTL-SDR · {air} in view")
+        elif pp.get("present"):
+            adsb_row = ("on" if pp.get("connected") else "warn", "ADS-B", f"PortaPack · {air} in view")
+        else:
+            adsb_row = ("off", "ADS-B", "no radio")
+        mdevs = mesh.get("devices") or []
+        conn = sum(1 for d in mdevs if d.get("connected"))
+        heard = live.get("meshtastic", 0) + live.get("meshcore", 0)
+        if mdevs:
+            mesh_row = ("on" if conn else "warn", "Mesh", f"{conn}/{len(mdevs)} radios · {heard:,} heard")
+        else:
+            mesh_row = ("on" if mesh.get("connected") else "off", "Mesh",
+                        f"{heard:,} heard" if mesh.get("present") else "no radio")
+        busy = bool(s.get("upload_in_progress"))
+        nxt = s.get("next_run_ts") or 0
+        next_row = ("busy" if busy else "", "Next upload",
+                    "uploading…" if busy else (f"in {traymenu.fmt_duration(nxt - time.time())}" if nxt else "—"))
+        queue_row = ("on" if (pend.get("aircraft") or pend.get("mesh")) else "", "Staged",
+                     f"{pend.get('aircraft', 0):,} aircraft · {pend.get('mesh', 0):,} mesh")
+        games = []
+        st = s.get("stats") or {}
+        if st.get("username"):
+            r = (st.get("your_rank") or {}).get("all_time")
+            games.append({"game": "WDGWARS", "name": st["username"], "color": traymenu.CYAN,
+                          "rank": f"#{r} all-time" if r else ""})
+        wd = s.get("wardrift") or {}
+        ch = (wd.get("account") or {}).get("character") or {}
+        if wd.get("session") == "ok" and ch.get("name"):
+            me = (wd.get("leaderboard") or {}).get("me") or {}
+            games.append({"game": "WARDRIFT", "name": f"{ch['name']} · Lv {ch.get('level') or '?'}",
+                          "color": traymenu.GOLD, "rank": f"#{me['rank']} global" if me.get("rank") else ""})
+        return {"adsb": adsb_row, "mesh": mesh_row, "queue": queue_row, "next": next_row,
+                "games": games, "activity": "uploading" if busy else "online",
+                "interval": int(self.cfg.get("interval_hours", 4)), "boot": autostart.is_enabled()}
+
     def _status_text(self) -> str:
         d = self.core.last_detect
         p = self.state.pending()
