@@ -241,7 +241,9 @@ class MeshReporter:
         reading was already delivered. ``stored`` is the same node as captured
         off the air, used for a position the radio itself does not report. The
         epoch state is kept only once the server accepts it (see :meth:`accept`)."""
-        obs = float(radio.get("observed_at") or 0)
+        # Dated when the uptime was measured, so the uptime always matches its
+        # timestamp; a later read of the same measurement is not sent again.
+        obs = float(radio.get("uptime_at") or radio.get("observed_at") or 0)
         node = dict(radio.get("node") or {})
         if stored and (node.get("lat") is None or node.get("lon") is None):
             node["lat"], node["lon"] = stored.get("lat"), stored.get("lon")

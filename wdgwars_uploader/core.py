@@ -11,6 +11,7 @@ All of it feeds a shared :class:`~wdgwars_uploader.state.LiveState`.
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -112,6 +113,8 @@ class UploaderCore:
         self.capture = mesh_capture.MeshCaptureService(
             persist_path=str(config_dir() / "mesh_store.json"))
         self.wardrift_mesh = wardrift.MeshReporter(config_dir() / "wardrift_mesh.json")
+        self._wardrift_mesh_lock = threading.Lock()   # cycle and radio report share sequence numbers
+        self._wardrift_report_error = ""
 
     def client(self) -> WDGWarsClient:
         return WDGWarsClient(self.cfg.get("api_key", ""),
@@ -301,25 +304,48 @@ class UploaderCore:
             rep.errors.append(f"wardrift: {e}")
             log.exception("Wardrift upload failed")
 
-    def _upload_wardrift_mesh(self, key: str, rep: CycleReport) -> None:
+    def _upload_wardrift_mesh(self, key: str, rep: CycleReport, *, poll: bool = True,
+                              quiet: bool = False) -> None:
         """Send mesh nodes and the local radios' telemetry to Wardrift. Runs on
-        its own, so a failure here never affects the WDGWars mesh upload."""
-        try:
-            self.poll_mesh()
-            nodes = mesh.filter_outlier_positions(self.capture.snapshot())
-            res = wardrift.WardriftClient(key, timeout=30.0).upload_mesh(
-                nodes, self.capture.local_radios(), self.wardrift_mesh)
-            rep.wardrift_mesh = res.summary()
-            if res.error:
-                rep.errors.append(f"wardrift mesh: {res.error}")
-                self.state.event(("Wardrift mesh partial: " if res.nodes
-                                  else "Wardrift mesh upload failed: ") + res.summary())
-            elif res.nodes:
-                self.state.event(f"Wardrift mesh uploaded: {res.summary()}")
-        except Exception as e:
-            rep.wardrift_mesh = f"error: {e}"
-            rep.errors.append(f"wardrift mesh: {e}")
-            log.exception("Wardrift mesh upload failed")
+        its own, so a failure here never affects the WDGWars mesh upload.
+        ``quiet`` is the periodic radio report: it logs to the activity feed only
+        when it fails, and only once per distinct error."""
+        with self._wardrift_mesh_lock:
+            try:
+                if poll:
+                    self.poll_mesh()
+                nodes = mesh.filter_outlier_positions(self.capture.snapshot())
+                res = wardrift.WardriftClient(key, timeout=30.0).upload_mesh(
+                    nodes, self.capture.local_radios(), self.wardrift_mesh)
+                rep.wardrift_mesh = res.summary()
+                if res.error:
+                    rep.errors.append(f"wardrift mesh: {res.error}")
+                    msg = ("Wardrift mesh partial: " if res.nodes
+                           else "Wardrift mesh upload failed: ") + res.summary()
+                    if not quiet or msg != self._wardrift_report_error:
+                        self.state.event(msg)
+                    self._wardrift_report_error = msg
+                else:
+                    self._wardrift_report_error = ""
+                    if res.nodes and not quiet:
+                        self.state.event(f"Wardrift mesh uploaded: {res.summary()}")
+                    elif res.nodes:
+                        log.info("Wardrift radio report: %s", res.summary())
+            except Exception as e:
+                rep.wardrift_mesh = f"error: {e}"
+                rep.errors.append(f"wardrift mesh: {e}")
+                log.exception("Wardrift mesh upload failed")
+
+    def wardrift_mesh_tick(self) -> None:
+        """Send a radio report between uploads. Wardrift counts uptime only from
+        reports at most an hour apart, so the poller calls this every 15 minutes.
+        It runs on its own thread so a slow request never stalls live polling."""
+        key = (self.cfg.get("wardrift_api_key") or "").strip()
+        if not key or not self.cfg.get("mesh_enabled", True) or self._wardrift_mesh_lock.locked():
+            return
+        threading.Thread(target=self._upload_wardrift_mesh, args=(key, CycleReport()),
+                         kwargs={"poll": False, "quiet": True},
+                         name="wdgw-wardrift-mesh", daemon=True).start()
 
     def _run_cycle_inner(self, rep: CycleReport) -> CycleReport:
         cfg = self.cfg.as_dict()

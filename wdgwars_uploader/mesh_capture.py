@@ -274,7 +274,13 @@ class MeshtasticWorker(threading.Thread):
                         "num_packets_rx": ls.get("numPacketsRx", 0),
                         "num_tx_relay": ls.get("numTxRelay", 0),
                         "num_tx_relay_canceled": ls.get("numTxRelayCanceled", 0)}
-        uptime = ls.get("uptimeSeconds") if ls else dm.get("uptimeSeconds")
+        # Uptime from whichever packet is newer: DeviceMetrics reach the computer
+        # every minute, LocalStats every 15 minutes.
+        if dm.get("uptimeSeconds") is not None and (
+                not ls or (self._metrics_at or 0) >= (self._stats_at or 0)):
+            uptime, uptime_at = dm.get("uptimeSeconds"), self._metrics_at
+        else:
+            uptime, uptime_at = (ls.get("uptimeSeconds") if ls else None), self._stats_at
         md = getattr(iface, "metadata", None)
         self.radio = {
             "protocol": "meshtastic",
@@ -284,7 +290,7 @@ class MeshtasticWorker(threading.Thread):
             "observed_at": now,
             "firmware_version": getattr(md, "firmware_version", "") or None,
             "uptime_seconds": uptime,
-            "uptime_at": (self._stats_at if ls else self._metrics_at) or now,
+            "uptime_at": uptime_at or now,
             # 101 means external power, not a battery reading.
             "battery_level": level if isinstance(level, int) and 0 <= level <= 100 else None,
             "voltage": dm.get("voltage"),

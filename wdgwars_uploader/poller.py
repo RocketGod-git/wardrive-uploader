@@ -14,15 +14,17 @@ log = logging.getLogger("wdgwars.poller")
 
 class Poller:
     def __init__(self, core, *, device_every=15.0, aircraft_every=10.0,
-                 mesh_every=60.0, stats_every=120.0) -> None:
+                 mesh_every=60.0, stats_every=120.0, wardrift_mesh_every=900.0) -> None:
         self.core = core
         self.intervals = {
             "device": device_every,
             "aircraft": aircraft_every,
             "mesh": mesh_every,
             "stats": stats_every,
+            "wardrift_mesh": wardrift_mesh_every,
         }
         self._next = {k: 0.0 for k in self.intervals}
+        self._next["wardrift_mesh"] = time.time() + 120   # let the radios connect first
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -48,6 +50,8 @@ class Poller:
                 self.core.poll_mesh()
             elif name == "stats":
                 self.core.refresh_stats()
+            elif name == "wardrift_mesh":
+                self.core.wardrift_mesh_tick()
         except Exception:
             log.debug("poll task %s failed", name, exc_info=True)
 
