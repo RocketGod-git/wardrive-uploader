@@ -59,6 +59,7 @@ class WardriftResult:
     ok: bool = True
     sent: list[dict[str, Any]] = field(default_factory=list)   # records the server took
     credited: int = 0
+    currency: int = 0
     exp: int = 0
     influence: int = 0
     error: str = ""
@@ -395,6 +396,7 @@ class WardriftClient:
                 res.credited += int(receipt.get("adsb_count") or 0)
                 res.exp += int(receipt.get("adsb_exp") or 0)
                 res.influence += int(receipt.get("awarded_influence") or 0)
+                res.currency += int(receipt.get("adsb_currency") or 0)
             res.sent.extend(part)
         return res
 
@@ -494,3 +496,104 @@ def _mesh_error(status: int, text: str) -> str:
     if 200 <= status < 300:
         return f"HTTP {status} batch not accepted"
     return f"HTTP {status}"
+
+
+# ---------------------------------------------------------------------------
+# Account: optional sign-in for player stats and leaderboards. Those routes take
+# a signed-in session, not the upload key. Only the session token is kept; the
+# password is sent once at sign-in.
+# ---------------------------------------------------------------------------
+TIMEFRAMES = ("daily", "7d", "month", "season", "all_time")
+SCOPES = ("global", "faction", "guild")
+_LB_FIELDS = ("rank", "character_id", "name", "faction_name", "faction_color", "guild_name",
+              "level", "class_name", "influence", "influence_share", "routes", "threats",
+              "trend", "wifi_count", "bluetooth_count", "adsb_count", "mesh_count", "toy_count",
+              "towers_captured", "keeps_captured")
+
+
+class SessionExpired(Exception):
+    """Wardrift no longer accepts the saved session token."""
+
+
+def _account_session(token: str = "") -> requests.Session:
+    s = requests.Session()
+    s.headers.update({"User-Agent": UA, "Accept": "application/json"})
+    if token:
+        s.headers["Authorization"] = f"Bearer {token}"
+    return s
+
+
+def sign_in(username: str, password: str, timeout: float = 20.0) -> dict[str, Any]:
+    """Exchange a username and password for a remembered session token."""
+    resp = _account_session().post(f"{BASE}/auth/sign-in/username", timeout=timeout,
+                                   json={"username": username, "password": password,
+                                         "remember_me": True})
+    data = _json(resp)
+    if resp.status_code in (400, 401, 403, 422):
+        raise ValueError("Wardrift did not accept that username and password")
+    if resp.status_code != 200:
+        raise ValueError(data.get("message") or f"Wardrift sign-in failed (HTTP {resp.status_code})")
+    sess = data.get("session") if isinstance(data.get("session"), dict) else {}
+    user = data.get("user") if isinstance(data.get("user"), dict) else {}
+    token = sess.get("token") or data.get("token")
+    if not token:
+        raise ValueError("Wardrift did not return a session")
+    return {"token": token,
+            "expires_at": sess.get("expires_at") or sess.get("expiresAt") or "",
+            "username": user.get("username") or user.get("name") or username}
+
+
+def sign_out(token: str) -> None:
+    try:
+        _account_session(token).post(f"{BASE}/auth/sign-out", timeout=10)
+    except requests.RequestException:
+        pass
+
+
+def _get(token: str, path: str, timeout: float = 20.0) -> dict[str, Any]:
+    resp = _account_session(token).get(f"{BASE}/{path}", timeout=timeout)
+    if resp.status_code in (401, 403):
+        raise SessionExpired()
+    resp.raise_for_status()
+    return _json(resp)
+
+
+def _lb_row(r: Any) -> dict[str, Any] | None:
+    return {k: r.get(k) for k in _LB_FIELDS} if isinstance(r, dict) else None
+
+
+def leaderboard(token: str, timeframe: str = "all_time", scope: str = "global") -> dict[str, Any]:
+    if timeframe not in TIMEFRAMES:
+        timeframe = "all_time"
+    if scope not in SCOPES:
+        scope = "global"
+    d = _get(token, f"leaderboard?scope={scope}&timeframe={timeframe}&includeStandings=true")
+    return {"timeframe": timeframe, "scope": scope,
+            "standings": [r for r in (_lb_row(x) for x in d.get("standings") or []) if r],
+            "me": _lb_row(d.get("my_rank")), "fetched": time.time()}
+
+
+def account(token: str) -> dict[str, Any]:
+    """The signed-in player's character, wardrive totals, mesh summary and titles."""
+    d = _get(token, "dashboard")
+    chars = d.get("characters") or [{}]
+    ch = chars[0] if isinstance(chars[0], dict) else {}
+    wd = d.get("wardrive") or {}
+    m = d.get("mesh") or {}
+    tl = d.get("titles") or {}
+    tl = tl.get("titles") if isinstance(tl, dict) else tl
+    tl = [t for t in tl or [] if isinstance(t, dict)]
+    unlocked = [str(t.get("label")) for t in tl if t.get("unlocked") and t.get("label")]
+    return {
+        "character": {k: ch.get(k) for k in ("name", "level", "exp", "exp_into_level", "exp_for_level",
+                                             "exp_to_next_level", "currency", "class_name", "title")},
+        "wardrive": {"lifetime": wd.get("lifetime") or {}, "this_week": wd.get("this_week") or {},
+                     "streak_days": wd.get("streak_days")},
+        "mesh": {"uplink_online": m.get("uplink_online"),
+                 "reporting_node_count": m.get("reporting_node_count"),
+                 "owned_node_count": m.get("owned_node_count"),
+                 "metrics": [{k: x.get(k) for k in ("key", "label", "value", "delta", "caption", "series")}
+                             for x in m.get("metrics") or [] if isinstance(x, dict)]},
+        "titles": {"unlocked": len(unlocked), "total": len(tl), "labels": unlocked[-12:]},
+        "fetched": time.time(),
+    }

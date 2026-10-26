@@ -22,6 +22,9 @@ INTERVAL_CHOICES_HOURS = [1, 4, 12, 24]
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "api_key": "",
+    "wardrift_session": "",          # set by Wardrift sign-in; the password is never stored
+    "wardrift_session_expires": "",
+    "wardrift_username": "",
     "wardrift_api_key": "",   # optional; aircraft and mesh nodes also go to wardrift.net
     # Name of this PC in uploaded file names, so uploads from several machines
     # can be told apart. Blank = the computer name.

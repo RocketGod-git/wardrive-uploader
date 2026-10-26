@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>WDGWars Uploader</title>
+<link rel="icon" href="/static/wdgwars.png">
 <style>
 :root{
   --bg:#05070a; --bg2:#0a0f16; --panel:#0b1119cc;
@@ -178,6 +179,7 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
 .field .row{display:flex;gap:8px}
 .field input{width:100%}
 .switch{display:flex;align-items:center;gap:8px;font-size:12px}
+.field .switch input{width:auto;flex:none}
 .devrow{display:flex;gap:8px;align-items:center;margin-bottom:6px}
 .devrow .d-port{min-width:200px;max-width:320px;flex:1}
 .devrow .d-rm{padding:5px 10px}
@@ -221,6 +223,138 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
   background:#0a141c;border:1px solid var(--cyan);color:var(--cyan);padding:10px 18px;border-radius:8px;
   box-shadow:0 0 22px rgba(0,229,255,.35);opacity:0;transition:.3s;letter-spacing:1px}
 .toast.show{opacity:1}
+
+/* platforms */
+:root{--wd:#ffe200; --wd-mag:#ff39ff; --wd-cyan:#24efff}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.pchip{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:30px;padding:4px 12px 4px 4px;
+  font-size:11px;letter-spacing:1px;color:var(--muted);cursor:pointer;background:#070c12;transition:.15s}
+.pchip:hover{border-color:var(--cyan-dim)}
+.pchip img{width:26px;height:26px;border-radius:50%;object-fit:contain;background:#000}
+.pchip b{color:#dfe;letter-spacing:1px}
+.pchip .dot{width:8px;height:8px}
+.pchip.off{opacity:.55}
+.plats{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,520px),1fr));gap:14px;align-items:start}
+.plat{container-type:inline-size;position:relative;overflow:hidden;border-radius:12px;padding:16px 18px 14px;
+  border:1px solid var(--line);background:linear-gradient(180deg,#0b121b,#060a10)}
+.plat::before{content:"";position:absolute;inset:0 0 auto 0;height:2px}
+.plat.wdg::before{background:linear-gradient(90deg,var(--cyan),transparent 70%);box-shadow:0 0 14px var(--cyan)}
+.plat.wd::before{background:linear-gradient(90deg,var(--wd),var(--wd-mag) 45%,transparent 80%);box-shadow:0 0 14px var(--wd)}
+.plat.wdg{background:radial-gradient(700px 260px at 0 0,rgba(0,229,255,.09),transparent 70%),linear-gradient(180deg,#0b121b,#060a10)}
+.plat.wd{background:radial-gradient(700px 260px at 0 0,rgba(255,226,0,.07),transparent 70%),
+  radial-gradient(500px 260px at 100% 100%,rgba(255,57,255,.06),transparent 70%),linear-gradient(180deg,#0b121b,#060a10)}
+.ph{display:flex;align-items:center;gap:12px;margin-bottom:12px;min-width:0}
+.ph .plogo{width:52px;height:52px;flex:none;border-radius:50%;object-fit:contain;background:#000}
+.plat.wdg .plogo{box-shadow:0 0 0 2px var(--cyan),0 0 18px rgba(0,229,255,.45)}
+.plat.wd .plogo{border-radius:12px;background:#05060a;padding:4px;box-shadow:0 0 0 1px #3a3410,0 0 18px rgba(255,226,0,.25)}
+.ph .who{min-width:0;flex:1}
+.ph .plat-name{font-size:10px;letter-spacing:3px;color:var(--muted)}
+.ph .uname{font-size:20px;font-weight:800;color:#eef;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2}
+.ph .usub{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fdot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;vertical-align:0}
+.ranks{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.rk{border:1px solid var(--line);border-radius:8px;padding:3px 9px;text-align:center;line-height:1.15;background:#070c12}
+.rk b{display:block;font-size:16px;color:#eef;font-variant-numeric:tabular-nums}
+.rk span{font-size:9px;letter-spacing:1px;color:var(--muted);text-transform:uppercase;white-space:nowrap}
+.plat.wdg .rk.hot{border-color:var(--cyan);box-shadow:0 0 12px rgba(0,229,255,.25)} .plat.wdg .rk.hot b{color:var(--cyan)}
+.plat.wd .rk.hot{border-color:var(--wd);box-shadow:0 0 12px rgba(255,226,0,.25)} .plat.wd .rk.hot b{color:var(--wd)}
+.pbody{display:grid;grid-template-columns:1fr;gap:14px}
+@container (min-width:760px){.pbody{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)}}
+@container (min-width:1100px){.pbody{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)}}
+.hero{display:flex;gap:16px;align-items:center}
+.hero .viz{flex:none}
+.hero .nums{min-width:0;flex:1}
+.bignum{font-size:38px;font-weight:800;line-height:1;letter-spacing:1px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.plat.wdg .bignum{color:var(--cyan);text-shadow:0 0 22px rgba(0,229,255,.45)}
+.plat.wd .bignum{color:var(--wd);text-shadow:0 0 22px rgba(255,226,0,.4)}
+.biglbl{font-size:10px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;margin:4px 0 8px}
+.gain{display:flex;gap:12px;flex-wrap:wrap;font-size:12px}
+.gain b{color:var(--green);font-variant-numeric:tabular-nums}
+.legend{display:grid;grid-template-columns:auto 1fr auto;gap:3px 8px;font-size:11px;margin-top:10px;align-items:center}
+.legend i{width:9px;height:9px;border-radius:2px;display:inline-block}
+.legend .lv{color:#dfe;font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
+.legend .lp{color:var(--muted);font-size:10px;text-align:right;min-width:38px}
+.panel{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:rgba(4,8,12,.55);min-width:0}
+.panel h3{margin:0 0 6px;font-size:10px;letter-spacing:2px;color:var(--muted);font-weight:600;text-transform:uppercase;
+  display:flex;justify-content:space-between;gap:8px;white-space:nowrap}
+.panel h3 em{font-style:normal;color:#9fb0c0;letter-spacing:0;text-transform:none;overflow:hidden;text-overflow:ellipsis}
+.tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.tile{border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:#070c12;min-width:0}
+.tile b{display:block;font-size:17px;color:#eef;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile span{font-size:9px;letter-spacing:1px;color:var(--muted);text-transform:uppercase;white-space:nowrap;display:block;overflow:hidden;text-overflow:ellipsis}
+.tile small{font-size:10px;color:var(--green);white-space:nowrap}
+.meter{height:8px;border-radius:6px;background:#0e1620;overflow:hidden;display:flex}
+.meter>div{height:100%}
+.mtext{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:4px;gap:8px;white-space:nowrap}
+.mtext b{color:#dfe}
+.sparkbox{position:relative}
+.sparkbox .note{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted);text-align:center;padding:0 10px}
+.badgewrap{display:flex;flex-wrap:wrap;gap:5px;max-height:92px;overflow:auto}
+.badgewrap .badge{color:#b9c8d6;white-space:nowrap;margin:0}
+.badgewrap.open{max-height:none}
+.more{font-size:10px;color:var(--cyan);cursor:pointer;margin-top:6px;display:inline-block}
+.mx{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.mx .tile b{font-size:15px}
+.receipt{display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:12px;margin-top:12px;padding:9px 12px;
+  border:1px dashed #3a3410;border-radius:10px;background:rgba(255,226,0,.03)}
+.receipt .rl{font-size:10px;letter-spacing:2px;color:var(--wd);text-transform:uppercase}
+.receipt b{color:#eef;font-variant-numeric:tabular-nums}
+.receipt .muted{color:var(--muted)}
+.cta{display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:14px;border:1px solid var(--line);border-radius:10px;
+  background:rgba(4,8,12,.55);font-size:12px;color:var(--muted)}
+.cta b{color:#eef;font-size:14px}
+.btn.gold{background:linear-gradient(90deg,#8a7a00,#5c5200);border-color:var(--wd);color:#fff7c2;box-shadow:0 0 18px rgba(255,226,0,.2)}
+.btn.gold:hover{background:linear-gradient(90deg,#b29e00,#7a6c00);box-shadow:0 0 26px rgba(255,226,0,.4)}
+.btn.sm{padding:7px 14px;font-size:11px}
+.connect{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:14px}
+.connect .cta img{width:44px;height:44px;border-radius:50%;object-fit:contain;background:#000}
+.xpring text{font-family:inherit}
+
+/* leaderboards v2 */
+.lbhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.lbhead h2{margin:0}
+.seg{display:flex;border:1px solid var(--line);border-radius:30px;overflow:hidden;background:#070c12}
+.seg div{display:flex;align-items:center;gap:6px;padding:4px 12px 4px 5px;font-size:11px;letter-spacing:1px;color:var(--muted);cursor:pointer}
+.seg div img{width:22px;height:22px;border-radius:50%;object-fit:contain;background:#000}
+.seg div.active.wdg{color:var(--cyan);background:rgba(0,229,255,.1)}
+.seg div.active.wd{color:var(--wd);background:rgba(255,226,0,.08)}
+.lbx{max-height:520px;overflow:auto}
+.lbx table{width:100%;border-collapse:collapse;font-size:12px}
+.lbx td{padding:6px 8px;border-bottom:1px solid #0e1620;white-space:nowrap}
+.lbx th{position:sticky;top:0;background:#0a1017;z-index:2;text-align:left;font-size:9px;letter-spacing:1px;color:var(--muted);
+  font-weight:600;padding:5px 8px;text-transform:uppercase;border-bottom:1px solid var(--line)}
+.lbx .r{width:34px;text-align:center}
+.medal{display:inline-flex;width:24px;height:24px;border-radius:50%;align-items:center;justify-content:center;font-weight:800;font-size:11px;
+  color:#0a0a0a}
+.medal.m1{background:radial-gradient(circle at 35% 30%,#fff3a6,#ffcc00 55%,#9a7400);box-shadow:0 0 12px rgba(255,204,0,.6)}
+.medal.m2{background:radial-gradient(circle at 35% 30%,#ffffff,#c4ccd4 55%,#6d7780);box-shadow:0 0 10px rgba(196,204,212,.45)}
+.medal.m3{background:radial-gradient(circle at 35% 30%,#ffd2a6,#d9874a 55%,#7a4318);box-shadow:0 0 10px rgba(217,135,74,.45)}
+.medal.mn{color:var(--muted);background:transparent;font-weight:600}
+.lbx .nm{max-width:220px;overflow:hidden;text-overflow:ellipsis;color:#dfe}
+.lbx .nm small{display:block;color:var(--muted);font-size:10px;overflow:hidden;text-overflow:ellipsis}
+.lbx .pat{color:var(--amber);font-size:10px;margin-left:4px}
+.lbx .v{text-align:right;font-weight:700;color:#eef;font-variant-numeric:tabular-nums}
+.lbx .bar{width:32%;min-width:90px}
+.lbx .bar .meter{height:6px}
+.lbx tr.me td{background:rgba(0,229,255,.08)}
+.lbx tr.me .nm{color:var(--cyan);font-weight:800}
+.lbx.wd tr.me td{background:rgba(255,226,0,.07)}
+.lbx.wd tr.me .nm{color:var(--wd)}
+.lbx tr.pin td{border-top:1px dashed var(--line)}
+.lbx tr.gap td{color:var(--muted);text-align:center;padding:2px;border:none}
+.lbmsg{color:var(--muted);padding:24px;text-align:center;font-size:12px}
+.wdg-tabs .tab.active{color:var(--cyan);border-color:var(--cyan)}
+.wd-tabs .tab.active{color:var(--wd);border-color:var(--wd);background:rgba(255,226,0,.06)}
+.acct{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.acct input{flex:1;min-width:140px}
+.hint{font-size:11px;color:var(--muted)}
+@container (min-width:760px) and (max-width:1099px){.wide2{grid-column:1/-1}}
+@container (min-width:760px){.wideall{grid-column:1/-1}}
+.race{display:flex;flex-direction:column;gap:9px}
+.race .rl{display:flex;justify-content:space-between;gap:8px;font-size:11px;white-space:nowrap}
+.race .rl span{color:var(--muted);overflow:hidden;text-overflow:ellipsis}
+.race .rl b{color:#eef;font-variant-numeric:tabular-nums}
+.race .rl b.up{color:var(--green)}
 </style>
 </head>
 <body>
@@ -230,9 +364,10 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
       <div class="logo"></div>
       <div>
         <h1>WDGWARS UPLOADER</h1>
-        <div class="sub">ADS-B // MESH // LIVE TELEMETRY</div>
+        <div class="sub">WDGWARS + WARDRIFT // ADS-B // MESH</div>
       </div>
     </div>
+    <div class="chips" id="pchips"></div>
     <div class="spacer"></div>
     <div class="hstat"><span>OPERATOR</span><b id="op-name">—</b></div>
     <div class="hstat"><span>UPTIME</span><b id="uptime">—</b></div>
@@ -279,6 +414,9 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
       </div>
     </div>
 
+    <!-- games -->
+    <section class="plats" id="plats" style="grid-column:span 12"></section>
+
     <!-- live feed: what's in view RIGHT NOW — one panel per source -->
     <div class="card col-12">
       <h2>Live incoming — unique captured</h2>
@@ -298,23 +436,11 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
       </div>
     </div>
 
-    <!-- stats -->
-    <div class="card col-4">
-      <h2>Your WDGWars stats</h2>
-      <div id="stats-body"><div class="empty">set an API key in Settings ↓</div></div>
-    </div>
-
-    <!-- leaderboard -->
-    <div class="card col-4">
-      <h2>Leaderboard</h2>
-      <div class="tabs" id="lb-tabs">
-        <div class="tab active" data-b="today">Today</div>
-        <div class="tab" data-b="week">Week</div>
-        <div class="tab" data-b="all_time">All-time</div>
-        <div class="tab" data-b="gangs">Gangs</div>
-        <div class="tab" data-b="hunters">Hunters</div>
-      </div>
-      <table class="lb"><tbody id="lb-body"><tr><td class="empty">loading…</td></tr></tbody></table>
+    <!-- leaderboards -->
+    <div class="card col-8" id="card-lb">
+      <div class="lbhead"><h2>Leaderboards</h2><span class="spacer"></span><div class="seg" id="lb-seg"></div></div>
+      <div class="tabs" id="lb-tabs"></div>
+      <div class="lbx" id="lb-box"><div class="lbmsg">loading…</div></div>
     </div>
 
     <!-- events -->
@@ -338,6 +464,12 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
         <div class="field">
           <label>Wardrift API key (optional) — aircraft and mesh nodes also upload to <a href="https://wardrift.net" target="_blank" rel="noopener">Wardrift ↗</a></label>
           <input type="password" id="f-wdkey" placeholder="optional — paste wdk_ key…" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>Wardrift account (optional) — shows your character, rank and the leaderboards here</label>
+          <div class="acct" id="wd-acct"></div>
+          <span class="hint">Your password goes to Wardrift once to sign in and is never saved. The app keeps only the sign-in session.</span>
+          <span class="msg" id="wd-acct-msg" style="margin-left:0"></span>
         </div>
         <div class="field">
           <label>Upload device name — goes in uploaded file names so each PC's uploads can be told apart</label>
@@ -404,7 +536,7 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
 
 <script>
 const $ = s => document.querySelector(s);
-let LB_TAB = "today", MY_ID = null, dirtyKey = false, _prevNewA = null, _prevNewM = null;
+let dirtyKey = false, _prevNewA = null, _prevNewM = null;
 
 function fmtDur(s){s=Math.max(0,Math.floor(s));const h=Math.floor(s/3600),m=Math.floor(s%3600/60),ss=s%60;
   return h?`${h}h ${m}m`:(m?`${m}m ${ss}s`:`${ss}s`);}
@@ -440,7 +572,9 @@ function render(s){
   window.MESH={}; [...(s.feed.meshtastic||[]), ...(s.feed.meshcore||[]), ...(s.feed.mesh||[])].forEach(m=>window.MESH[m.node_id]=m);
   // header
   $("#uptime").textContent=fmtDur(s.uptime);
-  const st=s.stats||{}; $("#op-name").textContent=st.username||"—"; MY_ID=st.user_id||MY_ID;
+  window._lastState=s;
+  const st=s.stats||{};
+  $("#op-name").textContent=st.username||(((s.wardrift||{}).account||{}).character||{}).name||"—";
 
   // serial ports for the mesh device picker; fill the pickers once the first
   // scan arrives, unless the user is editing them
@@ -533,9 +667,10 @@ function render(s){
   renderFeed("#feed-air", s.feed.aircraft, aircraftRow, airEmpty);
   renderFeed("#feed-mt", s.feed.meshtastic||[], meshRow, "no Meshtastic nodes heard yet");
   renderFeed("#feed-mc", s.feed.meshcore||[], meshRow, "no MeshCore nodes yet — building (check antenna / frequency)");
-  renderStats(st);
+  renderPlatforms(s);
   renderPrereqs(s.prereqs);
-  renderLeaderboard(s.leaderboard);
+  renderLB(s);
+  renderWdAccount(s);
   renderEvents(s.events);
   // settings (only fill when not being edited)
   const c=s.config||{};
@@ -615,30 +750,6 @@ function pumpThumbs(){
   }
 }
 
-function renderStats(st){
-  const b=$("#stats-body");
-  if(!st||!st.username){b.innerHTML='<div class="empty">set an API key in Settings ↓</div>';return;}
-  const rank=(st.your_rank&&st.your_rank.week)?("#"+st.your_rank.week):"—";
-  const cr=st.credits||{};
-  b.innerHTML=`
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <div><div style="font-weight:800;font-size:15px;color:#dfe">${st.username}</div>
-      <div class="d" style="color:var(--muted)">${st.gang?('▣ '+st.gang):''} ${st.gang_role?('· '+st.gang_role):''}</div></div>
-      <div class="pill">week ${rank}</div>
-    </div>
-    <div class="big-total">${(st.total||0).toLocaleString()}</div>
-    <div class="d" style="color:var(--muted);margin-bottom:10px">total captures</div>
-    <div class="kv">
-      <span class="k">Wi-Fi</span><span class="v">${(st.wifi||0).toLocaleString()}</span>
-      <span class="k">BLE</span><span class="v">${(st.ble||0).toLocaleString()}</span>
-      <span class="k">Aircraft</span><span class="v">${(st.aircraft||0).toLocaleString()}</span>
-      <span class="k">Mesh</span><span class="v">${(st.mesh||0).toLocaleString()}</span>
-      <span class="k">Credits</span><span class="v">${(cr.balance||0).toLocaleString()}</span>
-      <span class="k">7-day</span><span class="v">${(st.recent_7d||0).toLocaleString()}</span>
-    </div>
-    <div class="badges">${(st.badges||[]).slice(0,12).map(x=>`<span class="badge">${x}</span>`).join('')}</div>`;
-}
-
 function renderPrereqs(p){
   const box=$("#prereqs"); const checks=(p&&p.checks)||[];
   if(!checks.length){box.innerHTML='<div class="empty">checking…</div>';return;}
@@ -648,19 +759,6 @@ function renderPrereqs(p){
         ${c.detail?`<div class="m">${c.detail}</div>`:''}
         ${!c.ok&&c.fix?`<div class="fix">▶ ${c.fix} ${c.url?`<a href="${c.url}" target="_blank">${c.url}</a>`:''}</div>`:''}
       </div></div>`).join('');
-}
-
-function renderLeaderboard(lb){
-  const body=$("#lb-body");
-  if(!lb||Object.keys(lb).length===0){body.innerHTML='<tr><td class="empty">no data</td></tr>';return;}
-  let rows=lb[LB_TAB]||[];
-  if(!rows.length){body.innerHTML='<tr><td class="empty">—</td></tr>';return;}
-  body.innerHTML=rows.slice(0,15).map((r,i)=>{
-    const name=r.username||r.name||('#'+(r.gang_id||r.user_id||''));
-    const val=(r.total||r.ap_count||r.completed||r.earned||0).toLocaleString();
-    const me=(MY_ID&&(r.user_id===MY_ID))?'me':'';
-    return `<tr><td class="rank">${i+1}</td><td class="${me}">${name}</td><td class="val">${val}</td></tr>`;
-  }).join('');
 }
 
 let _lastEventSig='';
@@ -723,11 +821,6 @@ $("#btn-save").onclick=async()=>{
     await api("/api/refresh-stats","POST"); poll();}
   else{m.textContent="✗ "+(r.error||"error");m.className="msg err";}
 };
-document.querySelectorAll("#lb-tabs .tab").forEach(t=>t.onclick=()=>{
-  document.querySelectorAll("#lb-tabs .tab").forEach(x=>x.classList.remove("active"));
-  t.classList.add("active"); LB_TAB=t.dataset.b; poll();
-});
-
 // ---- detail modals ----
 function closeModal(){ $("#modal").classList.remove('show'); }
 function openModal(html, mag){
@@ -913,6 +1006,319 @@ $("#btn-pos-set").onclick=async()=>{
   if(r.ok){ m.className='msg ok'; m.textContent=`✓ Sent to ${r.radios} radio${r.radios>1?'s':''} (${r.lat}, ${r.lon}). It takes about 15 seconds to show above.`; }
   else { m.className='msg err'; m.textContent='✗ '+(r.error||'failed'); }
 };
+
+// ---- games: WDGWars + Wardrift ----
+const fmt=n=>(+n||0).toLocaleString();
+function compact(n){ n=+n||0; const a=Math.abs(n);
+  if(a>=1e9) return (n/1e9).toFixed(a>=1e10?1:2)+'B';
+  if(a>=1e6) return (n/1e6).toFixed(a>=1e7?1:2)+'M';
+  if(a>=1e4) return (n/1e3).toFixed(a>=1e5?0:1)+'K';
+  return n.toLocaleString(); }
+const safeColor=c=>/^#[0-9a-f]{3,8}$/i.test(c||'')?c:'#5f7285';
+const utcDay=()=>new Date().toISOString().slice(0,10);
+const COUNTS={};
+function runCounts(root){
+  root.querySelectorAll('[data-count]').forEach(el=>{
+    const key=el.dataset.count, to=+el.dataset.to||0, from=COUNTS[key]??0;
+    COUNTS[key]=to;
+    if(from===to){ el.textContent=fmt(to); return; }
+    const t0=performance.now(), dur=from?700:1100;
+    const step=t=>{ const p=Math.min(1,(t-t0)/dur), e=1-Math.pow(1-p,3);
+      el.textContent=fmt(Math.round(from+(to-from)*e)); if(p<1) requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+  });
+}
+const counter=(key,v)=>`<span data-count="${key}" data-to="${+v||0}">${fmt(v)}</span>`;
+let _gid=0;
+function sparkSVG(vals,{h=46,color='#00e5ff'}={}){
+  vals=(vals||[]).map(v=>+v||0); if(vals.length<2) return '';
+  const w=240, max=Math.max(...vals), min=Math.min(0,...vals), span=(max-min)||1, step=w/(vals.length-1);
+  const pts=vals.map((v,i)=>[i*step, h-2-((v-min)/span)*(h-6)]);
+  const line=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+  const id='sg'+(++_gid);
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="none" style="display:block">
+    <defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity=".38"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs>
+    <path d="${line} L ${w} ${h} L 0 ${h} Z" fill="url(#${id})"/>
+    <path d="${line}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`;
+}
+function barsSVG(items,{h=54,color='#00e5ff'}={}){
+  if(!items.length) return '';
+  const w=240, max=Math.max(1,...items.map(x=>x.v)), gap=3, bw=Math.max(2,(w-gap*(items.length-1))/items.length);
+  const id='bg'+(++_gid);
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="none" style="display:block">
+    <defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${color}"/><stop offset="1" stop-color="${color}" stop-opacity=".25"/></linearGradient></defs>
+    ${items.map((x,i)=>{ const bh=Math.max(1.5,(x.v/max)*(h-2));
+      return `<rect x="${(i*(bw+gap)).toFixed(1)}" y="${(h-bh).toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="1.5" fill="url(#${id})"><title>${escHtml(x.t)}: +${fmt(x.v)}</title></rect>`; }).join('')}</svg>`;
+}
+function donutSVG(segs,label,sub,size=128,th=15){
+  const c0=size/2, r=(size-th)/2, C=2*Math.PI*r, tot=segs.reduce((a,s)=>a+(+s.v||0),0)||1; let off=0;
+  const arcs=segs.map(s=>{ const len=C*(+s.v||0)/tot; const d=Math.max(0,len-1.5);
+    const el=`<circle r="${r}" cx="${c0}" cy="${c0}" fill="none" stroke="${s.color}" stroke-width="${th}" stroke-dasharray="${d.toFixed(2)} ${C.toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 ${c0} ${c0})" style="filter:drop-shadow(0 0 4px ${s.color}99)"/>`;
+    off+=len; return el; }).join('');
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle r="${r}" cx="${c0}" cy="${c0}" fill="none" stroke="#0e1620" stroke-width="${th}"/>${arcs}
+    <text x="50%" y="48%" text-anchor="middle" fill="#eef" font-size="17" font-weight="800">${label}</text>
+    <text x="50%" y="62%" text-anchor="middle" fill="#5f7285" font-size="9" letter-spacing="1.5">${sub}</text></svg>`;
+}
+function ringSVG(pct,label,sub,size=128,th=11){
+  const c0=size/2, r=(size-th)/2, C=2*Math.PI*r, id='rg'+(++_gid), p=Math.max(0,Math.min(1,pct));
+  return `<svg class="xpring" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+    <defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffe200"/><stop offset=".6" stop-color="#ff39ff"/><stop offset="1" stop-color="#24efff"/></linearGradient></defs>
+    <circle r="${r}" cx="${c0}" cy="${c0}" fill="none" stroke="#0e1620" stroke-width="${th}"/>
+    <circle r="${r}" cx="${c0}" cy="${c0}" fill="none" stroke="url(#${id})" stroke-width="${th}" stroke-linecap="round"
+      stroke-dasharray="${(C*p).toFixed(2)} ${C.toFixed(2)}" transform="rotate(-90 ${c0} ${c0})" style="filter:drop-shadow(0 0 6px rgba(255,226,0,.5))"/>
+    <text x="50%" y="47%" text-anchor="middle" fill="#ffe200" font-size="24" font-weight="800">${label}</text>
+    <text x="50%" y="63%" text-anchor="middle" fill="#9fb0c0" font-size="9" letter-spacing="1.5">${sub}</text></svg>`;
+}
+function meterHTML(segs){
+  const tot=segs.reduce((a,s)=>a+(+s.v||0),0)||1;
+  return `<div class="meter">${segs.map(s=>`<div title="${escHtml(s.k)}: ${fmt(s.v)}" style="width:${(100*(+s.v||0)/tot).toFixed(2)}%;background:${s.color};box-shadow:0 0 8px ${s.color}66"></div>`).join('')}</div>`;
+}
+function legendHTML(segs){
+  const tot=segs.reduce((a,s)=>a+(+s.v||0),0)||1;
+  return `<div class="legend">${segs.map(s=>`<i style="background:${s.color}"></i><span>${escHtml(s.k)}</span><span class="lv">${fmt(s.v)} <span class="lp">${(100*(+s.v||0)/tot).toFixed(s.v/tot<.01?2:1)}%</span></span>`).join('')}</div>`;
+}
+const rankChip=(n,lbl,title)=>`<div class="rk${n&&n<=10?' hot':''}" title="${escHtml(title||'')}"><b>${n?'#'+n:'—'}</b><span>${lbl}</span></div>`;
+const tile=(v,lbl,extra)=>`<div class="tile"><b>${v}</b><span>${lbl}</span>${extra?`<small>${extra}</small>`:''}</div>`;
+function gotoSetting(sel){ const el=$(sel); if(!el) return; el.scrollIntoView({behavior:'smooth',block:'center'}); setTimeout(()=>el.focus(),400); }
+
+function raceRows(s){
+  const st=s.stats||{}, lb=s.leaderboard||{}, out=[];
+  for(const [k,lbl] of [['today','Today'],['week','This week'],['all_time','All-time']]){
+    const rows=lb[k]||[], i=rows.findIndex(r=>r.user_id===st.user_id);
+    if(i<0){ out.push(`<div><div class="rl"><span>${lbl}</span><b>outside the top ${rows.length||50}</b></div>${meterHTML([{k:'',v:0,color:'#00e5ff'},{k:'',v:1,color:'#0e1620'}])}</div>`); continue; }
+    const mine=+rows[i].total||0;
+    if(i===0){ const lead=mine-(+(rows[1]||{}).total||0);
+      out.push(`<div><div class="rl"><span>${lbl} · #1</span><b class="up">leading by ${compact(lead)}</b></div>${meterHTML([{k:'You',v:1,color:'#25f4a7'}])}</div>`); continue; }
+    const tgt=rows[i-1], need=Math.max(1,(+tgt.total||0)-mine+1);
+    out.push(`<div><div class="rl"><span>${lbl} · #${i+1} → #${i} ${escHtml(tgt.username||'')}</span><b>${compact(need)} to pass</b></div>
+      ${meterHTML([{k:'You',v:mine,color:'#00e5ff'},{k:'To pass',v:need,color:'#0e1620'}])}</div>`);
+  }
+  const gangs=lb.gangs||[], gi=gangs.findIndex(g=>st.gang_id&&g.gang_id===st.gang_id);
+  if(gi>=0) out.push(`<div class="rl"><span>▣ ${escHtml(gangs[gi].name||st.gang)} · ${fmt(gangs[gi].member_count)} members</span><b>#${gi+1} gang</b></div>`);
+  return out.join('');
+}
+function wdgCard(s){
+  const st=s.stats||{}, r=st.your_rank||{}, cr=st.credits||{}, lab=st.badge_labels||{};
+  const segs=[{k:'Wi-Fi',v:st.wifi,color:'#00e5ff'},{k:'BLE',v:st.ble,color:'#7c5cff'},
+              {k:'Aircraft',v:st.aircraft,color:'#ffb300'},{k:'Mesh',v:st.mesh,color:'#ff2d95'}];
+  const days=Object.entries(s.wdgwars_days||{}).sort((a,b)=>a[0]<b[0]?-1:1);
+  const gains=[]; for(let i=1;i<days.length;i++) gains.push({t:days[i][0], v:Math.max(0,(days[i][1].total||0)-(days[i-1][1].total||0))});
+  const g=gains.slice(-14);
+  const cap=st.new_ap_limit||{};
+  const badges=(st.badges||[]).map(b=>lab[b]||b);
+  const top=r.top_n?`of the top ${r.top_n}`:'';
+  if(!st.username) return `<div class="plat wdg"><div class="ph"><img class="plogo" src="/static/wdgwars.png" alt=""><div class="who"><div class="plat-name">WDGWARS</div><div class="uname">Connecting…</div><div class="usub">${(s.config||{}).has_api_key?'loading your stats':'add your API key in Settings'}</div></div></div></div>`;
+  return `<div class="plat wdg">
+    <div class="ph"><img class="plogo" src="/static/wdgwars.png" alt="">
+      <div class="who"><div class="plat-name">WDGWARS</div><div class="uname">${escHtml(st.username)}</div>
+        <div class="usub">${st.gang?'▣ '+escHtml(st.gang):'no gang'}${st.gang_role?' · '+escHtml(st.gang_role):''}${st.country?' · '+escHtml(st.country):''}</div></div>
+      <div class="ranks">${rankChip(r.all_time,'All-time',top)}${rankChip(r.week,'This week',top)}${rankChip(r.today,'Today',top)}</div></div>
+    <div class="pbody">
+      <div><div class="hero"><div class="viz">${donutSVG(segs,compact(st.total),'CAPTURES')}</div>
+        <div class="nums"><div class="bignum">${counter('wdg-total',st.total)}</div><div class="biglbl">total captures</div>
+          <div class="gain"><span><b>+${fmt(st.recent_today)}</b> today</span><span><b>+${fmt(st.recent_7d)}</b> 7 days</span></div></div></div>
+        ${legendHTML(segs)}</div>
+      <div class="panel"><h3>Daily gains <em>${g.length?g.length+' day'+(g.length>1?'s':''):''}</em></h3>
+        <div class="sparkbox" style="height:54px">${g.length?barsSVG(g):'<div class="note">Builds up as the uploader runs each day</div>'}</div>
+        ${cap.cap?`<div style="margin-top:10px">${meterHTML([{k:'Used',v:cap.used,color:'#00e5ff'},{k:'Left',v:cap.remaining,color:'#0e1620'}])}
+          <div class="mtext"><span>New Wi-Fi cap (24 h)</span><span><b>${fmt(cap.used)}</b> / ${fmt(cap.cap)}</span></div></div>`:''}
+        <div class="tiles" style="margin-top:10px">${tile(fmt(cr.balance),'Credits')}${tile(compact(st.reinforce_total),'Reinforced')}${tile(badges.length,'Badges')}</div></div>
+      <div class="panel wide2"><h3>Next target <em>climb the boards</em></h3><div class="race">${raceRows(s)}</div></div>
+      <div class="panel wideall"><h3>Badges <em>${badges.length}</em></h3>
+        ${badges.length?`<div class="badgewrap" id="wdg-badges">${badges.map(b=>`<span class="badge">${escHtml(b)}</span>`).join('')}</div>`:'<div class="hint">No badges yet. Keep scanning.</div>'}</div>
+    </div></div>`;
+}
+
+function wdReceipt(s){
+  const wd=s.wardrift||{}, c=s.config||{}, t=(wd.days||{})[utcDay()]||{}, all=wd.earned_total||{};
+  if(!c.has_wardrift_key) return `<div class="receipt"><span class="rl">From this uploader</span><span class="muted">Add your Wardrift upload key in Settings to send aircraft and mesh from this PC.</span></div>`;
+  if(!all.aircraft && !all.xp && !all.influence) return `<div class="receipt"><span class="rl">From this uploader</span><span class="muted">Nothing credited yet. Aircraft credits show here after the next upload.</span></div>`;
+  return `<div class="receipt"><span class="rl">From this uploader</span>
+    <span>Today <b>${fmt(t.aircraft)}</b> aircraft · <b>+${fmt(t.xp)}</b> XP · <b>+${fmt(t.influence)}</b> influence${t.currency?` · <b>+${fmt(t.currency)}</b> currency`:''}</span>
+    <span class="muted">All time ${fmt(all.aircraft)} aircraft · +${compact(all.xp)} XP · +${compact(all.influence)} influence</span></div>`;
+}
+function wdCard(s){
+  const wd=s.wardrift||{}, c=s.config||{}, a=wd.account||{}, ch=a.character||{};
+  const lb=wd.leaderboard||{}, me=lb.me||{};
+  const head=(name,sub,ranks)=>`<div class="ph"><img class="plogo" src="/static/wardrift.svg" alt="">
+      <div class="who"><div class="plat-name">WARDRIFT</div><div class="uname">${name}</div><div class="usub">${sub}</div></div>
+      <div class="ranks">${ranks||''}</div></div>`;
+  if(wd.session!=='ok' || !ch.name){
+    const expired=wd.session==='expired';
+    return `<div class="plat wd">${head(escHtml(c.wardrift_username||'Wardrift'), c.has_wardrift_key?'uploading aircraft and mesh':'not set up yet')}
+      <div class="cta"><b>${expired?'Your Wardrift sign-in expired':'See your Wardrift character here'}</b>
+        <span>${expired?'Sign in again to bring back your rank, level and leaderboards.':'Sign in once to show your level, influence, rank and the leaderboards. Optional: uploads work without it.'}</span>
+        <button class="btn gold sm" type="button" onclick="gotoSetting('#f-wd-user')">Sign in to Wardrift</button></div>
+      ${wdReceipt(s)}</div>`;
+  }
+  const lw=(a.wardrive||{}).lifetime||{}, tw=(a.wardrive||{}).this_week||{}, streak=(a.wardrive||{}).streak_days||0;
+  const lvlMax=!ch.exp_to_next_level && !ch.exp_for_level;
+  const pct=lvlMax?1:(ch.exp_into_level||0)/Math.max(1,(ch.exp_into_level||0)+(ch.exp_to_next_level||0));
+  const mi=km=>Math.round((+km||0)*0.621371);
+  const fac=me.faction_name?`<span class="fdot" style="background:${safeColor(me.faction_color)};box-shadow:0 0 6px ${safeColor(me.faction_color)}"></span>${escHtml(me.faction_name)}`:'';
+  const sub=[`Lv ${ch.level||'?'} ${escHtml(ch.class_name||'')}`, fac, me.guild_name?escHtml(me.guild_name):''].filter(Boolean).join(' · ');
+  const segs=[{k:'Wi-Fi',v:me.wifi_count,color:'#24efff'},{k:'Bluetooth',v:me.bluetooth_count,color:'#ff39ff'},
+              {k:'Aircraft',v:me.adsb_count,color:'#ffe200'},{k:'Mesh',v:me.mesh_count,color:'#25f4a7'},{k:'Toys',v:me.toy_count,color:'#ff8a3d'}].filter(x=>+x.v>0);
+  const metrics=((a.mesh||{}).metrics||[]);
+  const t=a.titles||{};
+  return `<div class="plat wd">${head(escHtml(ch.name), sub, rankChip(me.rank,'Global','all-time influence')+`<div class="rk"><b>${streak}🔥</b><span>Day streak</span></div>`)}
+    <div class="pbody">
+      <div><div class="hero"><div class="viz">${ringSVG(pct,'LV '+(ch.level||'?'), lvlMax?'MAX LEVEL':Math.round(pct*100)+'% TO NEXT')}</div>
+        <div class="nums"><div class="bignum">${counter('wd-inf',me.influence)}</div><div class="biglbl">influence</div>
+          <div class="gain"><span><b>${me.influence_share!=null?(+me.influence_share).toFixed(2)+'%':'—'}</b> of all influence</span><span><b>${fmt(ch.currency)}</b> currency</span></div></div></div>
+        ${segs.length?`<div style="margin-top:10px">${meterHTML(segs)}</div>${legendHTML(segs)}`:''}</div>
+      <div class="panel"><h3>Activity <em>last 7 days</em></h3>
+        <div class="sparkbox" style="height:46px">${(me.trend||[]).length>1?sparkSVG(me.trend,{color:'#ffe200'}):'<div class="note">No activity yet</div>'}</div>
+        <div class="tiles" style="margin-top:10px">
+          ${tile(fmt(lw.routes_logged),'Routes',tw.routes_logged?'+'+fmt(tw.routes_logged)+' wk':'')}
+          ${tile(compact(lw.access_points_discovered),'APs found',tw.access_points_discovered?'+'+compact(tw.access_points_discovered)+' wk':'')}
+          ${tile(fmt(lw.threats_flagged),'Threats',tw.threats_flagged?'+'+fmt(tw.threats_flagged)+' wk':'')}
+          ${tile(fmt(mi(lw.distance_km)),'Miles',tw.distance_km?'+'+fmt(mi(tw.distance_km))+' wk':'')}
+          ${tile(fmt(me.towers_captured),'Towers')}
+          ${tile(t.total?`${t.unlocked}/${t.total}`:'—','Titles')}</div></div>
+      <div class="panel wide2"><h3>Mesh <em>${(a.mesh||{}).owned_node_count!=null?fmt(a.mesh.owned_node_count)+' radio'+(a.mesh.owned_node_count==1?'':'s'):''}</em></h3>
+        ${metrics.length?`<div class="mx">${metrics.slice(0,4).map(m=>`<div class="tile"><b>${escHtml(m.value)}</b><span>${escHtml(m.label)}</span>
+          ${m.delta?`<small style="color:${String(m.delta).startsWith('-')?'var(--red)':'var(--green)'}">${escHtml(m.delta)}</small>`:''}
+          <div style="margin-top:4px">${sparkSVG(m.series,{h:22,color:'#ff39ff'})}</div></div>`).join('')}</div>`
+          :'<div class="hint">No mesh radio enrolled yet. Connect one under Mesh devices.</div>'}</div>
+    </div>${wdReceipt(s)}</div>`;
+}
+
+let _platSig='';
+function renderPlatforms(s){
+  const c=s.config||{}, st=s.stats||{}, wd=s.wardrift||{};
+  const wdgOn=!!c.has_api_key, wdOn=!!(c.has_wardrift_key||c.has_wardrift_session);
+  const sig=JSON.stringify([wdgOn,wdOn,st,s.wdgwars_days,s.leaderboard_ts,wd,c.has_wardrift_key,c.wardrift_username]);
+  // header chips
+  const ch=(wd.account||{}).character||{};
+  $("#pchips").innerHTML=
+    `<div class="pchip${wdgOn?'':' off'}" data-go="${wdgOn?'#plats':'#f-key'}"><img src="/static/wdgwars.png" alt=""><span class="dot ${wdgOn?(st.username?'on':'warn'):''}"></span><span>WDGWARS <b>${wdgOn?escHtml(st.username||'…'):'add key'}</b></span></div>`+
+    `<div class="pchip${wdOn?'':' off'}" data-go="${wdOn?'#plats':'#f-wdkey'}"><img src="/static/wardrift.svg" alt=""><span class="dot ${wdOn?((wd.session==='ok'||c.has_wardrift_key)?'on':'warn'):''}"></span><span>WARDRIFT <b>${wdOn?escHtml(ch.name||(c.has_wardrift_key?'uploading':'signed in')):'add key'}</b></span></div>`;
+  if(sig===_platSig) return; _platSig=sig;
+  const box=$("#plats");
+  if(!wdgOn && !wdOn){
+    box.innerHTML=`<div class="plat wdg" style="grid-column:1/-1"><div class="ph"><div class="who"><div class="plat-name">GET STARTED</div><div class="uname">Connect a game</div>
+      <div class="usub">Pick one or both. Aircraft and mesh nodes upload to every game you add.</div></div></div>
+      <div class="connect">
+        <div class="cta"><img src="/static/wdgwars.png" alt=""><b>WDGWars</b><span>Paste your WDGWars API key to start uploading and see your stats and the leaderboards.</span>
+          <button class="btn sm" type="button" onclick="gotoSetting('#f-key')">Add WDGWars key</button></div>
+        <div class="cta"><img src="/static/wardrift.svg" alt="" style="border-radius:10px"><b>Wardrift</b><span>Paste a Wardrift upload key to earn XP and influence for every aircraft and mesh radio.</span>
+          <button class="btn gold sm" type="button" onclick="gotoSetting('#f-wdkey')">Add Wardrift key</button></div>
+      </div></div>`;
+    return;
+  }
+  box.innerHTML=(wdgOn?wdgCard(s):'')+(wdOn?wdCard(s):'');
+  runCounts(box);
+}
+document.addEventListener('click',e=>{ const c=e.target.closest('.pchip[data-go]'); if(c) gotoSetting(c.dataset.go); });
+
+// ---- leaderboards ----
+const LB={plat:null, wdg:'today', wd:'all_time', cache:{}, loading:{}};
+const WDG_TABS=[['today','Today'],['week','Week'],['all_time','All-time'],['gangs','Gangs'],['hunters','Hunters'],['cells','Cells']];
+const WD_TABS=[['daily','Daily'],['7d','7 Day'],['month','Month'],['season','Season'],['all_time','All Time']];
+const medal=n=>`<span class="medal ${n<=3?'m'+n:'mn'}">${n}</span>`;
+let _lbSig='';
+function renderLB(s, force){
+  const c=s.config||{}, st=s.stats||{}, wd=s.wardrift||{}, lb=s.leaderboard||{};
+  const wdgOk=!!c.has_api_key && Object.keys(lb).length>0, wdOk=wd.session==='ok';
+  if(!LB.plat || (LB.plat==='wdg'&&!wdgOk) || (LB.plat==='wd'&&!wdOk)) LB.plat=wdgOk?'wdg':(wdOk?'wd':null);
+  const wdData=LB.wd==='all_time'?wd.leaderboard:LB.cache[LB.wd];
+  const sig=JSON.stringify([LB.plat,LB.wdg,LB.wd,wdgOk,wdOk,s.leaderboard_ts,st.user_id,st.gang_id,(wdData||{}).fetched,(wdData||{}).error]);
+  if(!force && sig===_lbSig) return; _lbSig=sig;
+  const seg=$("#lb-seg"), tabs=$("#lb-tabs"), box=$("#lb-box");
+  const segBtn=(p,img,name)=>`<div class="${p}${LB.plat===p?' active':''}" data-p="${p}"><img src="${img}" alt="">${name}</div>`;
+  seg.innerHTML=(wdgOk&&wdOk)?segBtn('wdg','/static/wdgwars.png','WDGWARS')+segBtn('wd','/static/wardrift.svg','WARDRIFT')
+    :LB.plat?segBtn(LB.plat, LB.plat==='wdg'?'/static/wdgwars.png':'/static/wardrift.svg', LB.plat==='wdg'?'WDGWARS':'WARDRIFT'):'';
+  seg.style.display=LB.plat?'':'none';
+  if(!LB.plat){ tabs.innerHTML=''; tabs.className='tabs';
+    box.innerHTML=`<div class="lbmsg">Leaderboards show here once you add a WDGWars key or sign in to Wardrift in Settings.</div>`; return; }
+  const list=LB.plat==='wdg'?WDG_TABS:WD_TABS, cur=LB.plat==='wdg'?LB.wdg:LB.wd;
+  tabs.className='tabs '+(LB.plat==='wdg'?'wdg-tabs':'wd-tabs');
+  tabs.innerHTML=list.map(([k,l])=>`<div class="tab${k===cur?' active':''}" data-t="${k}">${l}</div>`).join('');
+  const view=LB.plat+':'+cur, keep=box.dataset.view===view?box.scrollTop:0;
+  box.className='lbx '+LB.plat;
+  box.innerHTML=LB.plat==='wdg'?wdgRows(lb,st):wdRows(wdData,wd);
+  box.dataset.view=view; box.scrollTop=keep;
+}
+function wdgRows(lb,st){
+  const tab=LB.wdg, rows=lb[tab]||[];
+  if(!rows.length) return '<div class="lbmsg">No one on this board yet.</div>';
+  const val=r=>tab==='gangs'?r.ap_count:tab==='hunters'?r.earned:tab==='cells'?r.cells:r.total;
+  const max=Math.max(1,...rows.map(r=>+val(r)||0));
+  const isMe=r=>tab==='gangs'?(st.gang_id&&r.gang_id===st.gang_id):(st.user_id&&r.user_id===st.user_id);
+  const valLbl={gangs:'APs',hunters:'Earned',cells:'Cells'}[tab]||'Captures';
+  const body=rows.map((r,i)=>{
+    const v=+val(r)||0;
+    const bar=tab==='all_time'
+      ? meterHTML([{k:'Wi-Fi',v:r.wifi,color:'#00e5ff'},{k:'BLE',v:r.ble,color:'#7c5cff'},{k:'Aircraft',v:r.aircraft,color:'#ffb300'},{k:'Mesh',v:r.mesh,color:'#ff2d95'}]).replace('class="meter"',`class="meter" style="width:${(100*v/max).toFixed(1)}%"`)
+      : `<div class="meter"><div style="width:${(100*v/max).toFixed(1)}%;background:linear-gradient(90deg,var(--cyan-dim),var(--cyan));box-shadow:0 0 8px rgba(0,229,255,.4)"></div></div>`;
+    const sub=tab==='gangs'?`${fmt(r.member_count)} members`:tab==='hunters'?`${fmt(r.completed)} bounties`:'';
+    return `<tr class="${isMe(r)?'me':''}"><td class="r">${medal(i+1)}</td>
+      <td class="nm">${escHtml(r.username||r.name||'—')}${r.is_patron?'<span class="pat" title="patron">★</span>':''}${sub?`<small>${sub}</small>`:''}</td>
+      <td class="bar">${bar}</td><td class="v">${compact(v)}</td></tr>`;
+  }).join('');
+  let pin='';
+  if(!rows.some(isMe) && st.username && tab!=='gangs'){
+    pin=`<tr class="gap"><td colspan="4">⋯</td></tr><tr class="me pin"><td class="r">${medal((st.your_rank||{})[tab]||'—')}</td><td class="nm">${escHtml(st.username)}<small>you, outside the top ${rows.length}</small></td><td class="bar"></td><td class="v"></td></tr>`;
+  }
+  return `<table><tr><th class="r">#</th><th>${tab==='gangs'?'Gang':'Player'}</th><th></th><th style="text-align:right">${valLbl}</th></tr>${body}${pin}</table>`;
+}
+function wdRows(d,wd){
+  if(!d) { loadWdBoard(LB.wd); return '<div class="lbmsg">loading…</div>'; }
+  if(d.error) return `<div class="lbmsg">${d.error==='expired'?'Your Wardrift sign-in expired. Sign in again in Settings.':'Could not load this board: '+escHtml(d.error)}</div>`;
+  const rows=d.standings||[], me=d.me||{};
+  if(!rows.length) return '<div class="lbmsg">No one on this board yet.</div>';
+  const isMe=r=>me.character_id&&r.character_id===me.character_id;
+  const line=(r,cls)=>`<tr class="${cls}"><td class="r">${medal(r.rank||'—')}</td>
+      <td class="nm"><span class="fdot" style="background:${safeColor(r.faction_color)};box-shadow:0 0 6px ${safeColor(r.faction_color)}"></span>${escHtml(r.name||'—')}
+        <small>Lv ${r.level||'?'} ${escHtml(r.class_name||'')}${r.guild_name?' · '+escHtml(r.guild_name):''}</small></td>
+      <td class="bar"><div class="meter"><div style="width:${Math.min(100,(+r.influence_share||0)/Math.max(.01,+rows[0].influence_share||1)*100).toFixed(1)}%;background:linear-gradient(90deg,#8a7a00,var(--wd));box-shadow:0 0 8px rgba(255,226,0,.4)"></div></div>
+        <div class="mtext"><span>${(+r.influence_share||0).toFixed(2)}% share</span><span>${fmt(r.routes)} routes</span></div></td>
+      <td style="width:76px">${sparkSVG(r.trend,{h:22,color:safeColor(r.faction_color)})}</td>
+      <td class="v">${compact(r.influence)}</td></tr>`;
+  const body=rows.map(r=>line(r,isMe(r)?'me':'')).join('');
+  const pin=(!rows.some(isMe)&&me.character_id)?`<tr class="gap"><td colspan="5">⋯</td></tr>`+line(me,'me pin'):'';
+  return `<table><tr><th class="r">#</th><th>Character</th><th>Share</th><th>Trend</th><th style="text-align:right">Influence</th></tr>${body}${pin}</table>`;
+}
+async function loadWdBoard(tf){
+  const c=LB.cache[tf];
+  if(LB.loading[tf] || (c && !c.error && Date.now()/1000-(c.fetched||0)<60)) return;
+  LB.loading[tf]=true;
+  try{ LB.cache[tf]=await api('/api/wardrift/leaderboard?timeframe='+tf); }
+  catch(e){ LB.cache[tf]={error:'offline'}; }
+  LB.loading[tf]=false;
+  if(window._lastState) renderLB(window._lastState,true);
+}
+$("#lb-seg").addEventListener('click',e=>{ const b=e.target.closest('[data-p]'); if(!b) return; LB.plat=b.dataset.p; if(window._lastState) renderLB(window._lastState,true); });
+$("#lb-tabs").addEventListener('click',e=>{ const t=e.target.closest('[data-t]'); if(!t) return;
+  if(LB.plat==='wdg') LB.wdg=t.dataset.t; else { LB.wd=t.dataset.t; if(LB.wd!=='all_time') loadWdBoard(LB.wd); }
+  if(window._lastState) renderLB(window._lastState,true); });
+
+// ---- Wardrift sign-in ----
+let _acctSig='';
+function renderWdAccount(s){
+  const c=s.config||{}, wd=s.wardrift||{};
+  const state=c.has_wardrift_session?(wd.session==='expired'?'expired':'in'):'out';
+  const sig=state+'|'+(c.wardrift_username||'');
+  if(sig===_acctSig) return; _acctSig=sig;
+  const box=$("#wd-acct");
+  if(state==='in'){
+    box.innerHTML=`<span>Signed in as <b style="color:var(--wd)">${escHtml(c.wardrift_username||'')}</b></span><button class="btn ghost sm" type="button" id="btn-wd-out">Sign out</button>`;
+    $("#btn-wd-out").onclick=async()=>{ await api('/api/wardrift/sign-out','POST',{}); toast('Signed out of Wardrift'); poll(); };
+  } else {
+    box.innerHTML=`<input type="text" id="f-wd-user" placeholder="Wardrift username" autocomplete="username" value="${escHtml(c.wardrift_username||'')}">
+      <input type="password" id="f-wd-pass" placeholder="password" autocomplete="current-password">
+      <button class="btn gold sm" type="button" id="btn-wd-in">Sign in</button>`;
+    const go=async()=>{ const m=$("#wd-acct-msg"); m.className='msg'; m.textContent='signing in…';
+      const r=await api('/api/wardrift/sign-in','POST',{username:$("#f-wd-user").value.trim(),password:$("#f-wd-pass").value});
+      $("#f-wd-pass").value='';
+      if(r.ok){ m.className='msg ok'; m.textContent='✓ signed in as '+r.username; toast('Signed in to Wardrift'); _acctSig=''; poll(); }
+      else { m.className='msg err'; m.textContent='✗ '+(r.error||'sign-in failed'); } };
+    $("#btn-wd-in").onclick=go;
+    $("#f-wd-pass").addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); go(); } });
+    if(state==='expired') { const m=$("#wd-acct-msg"); m.className='msg err'; m.textContent='Your sign-in expired. Sign in again.'; }
+  }
+}
 
 poll(); setInterval(poll, 2500);
 </script>

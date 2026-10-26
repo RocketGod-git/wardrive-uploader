@@ -69,6 +69,13 @@ class LiveState:
         self._persist_ts = 0.0
         self._persist_every = 15.0                     # throttle disk writes
         self._load_acc()                               # restore un-uploaded queue
+        # Dashboard history: WDGWars totals per day (for the trend graph) and the
+        # Wardrift credits this uploader earned per UTC day (from upload receipts).
+        self.wdgwars_days: dict[str, dict] = {}
+        self.wardrift_days: dict[str, dict] = {}
+        self._load_history()
+        self.wardrift: dict[str, Any] = {"session": "signed_out", "account": {},
+                                         "leaderboard": {}, "error": ""}
 
         # Counters
         self.session_uploaded = {"aircraft": 0, "mesh": 0}   # NEW to account (imported)
@@ -296,6 +303,53 @@ class LiveState:
         except OSError:
             pass
 
+    # -- dashboard history -------------------------------------------------
+    def _history_path(self):
+        return config_dir() / "history.json"
+
+    def _load_history(self) -> None:
+        try:
+            data = json.loads(self._history_path().read_text(encoding="utf-8"))
+            self.wdgwars_days = {k: v for k, v in (data.get("wdgwars") or {}).items() if isinstance(v, dict)}
+            self.wardrift_days = {k: v for k, v in (data.get("wardrift") or {}).items() if isinstance(v, dict)}
+        except (OSError, ValueError, AttributeError):
+            pass
+
+    def _save_history(self) -> None:
+        cutoff = time.strftime("%Y-%m-%d", time.gmtime(time.time() - 120 * 86400))
+        with self._lock:
+            for d in (self.wdgwars_days, self.wardrift_days):
+                for k in [k for k in d if k < cutoff]:
+                    d.pop(k, None)
+            payload = json.dumps({"wdgwars": self.wdgwars_days, "wardrift": self.wardrift_days})
+        try:
+            path = self._history_path()
+            fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(payload)
+            os.replace(tmp, path)
+        except OSError:
+            pass
+
+    def record_wdgwars_totals(self, stats: dict) -> None:
+        """Keep the latest WDGWars totals for each local day."""
+        day = time.strftime("%Y-%m-%d")
+        row = {k: int(stats.get(k) or 0) for k in ("wifi", "ble", "aircraft", "mesh", "total")}
+        with self._lock:
+            if self.wdgwars_days.get(day) == row:
+                return
+            self.wdgwars_days[day] = row
+        self._save_history()
+
+    def add_wardrift_earned(self, aircraft: int, xp: int, influence: int, currency: int) -> None:
+        """Add one upload receipt's credits to today's (UTC) tally."""
+        day = time.strftime("%Y-%m-%d", time.gmtime())
+        with self._lock:
+            row = self.wardrift_days.setdefault(day, {"aircraft": 0, "xp": 0, "influence": 0, "currency": 0})
+            for k, v in (("aircraft", aircraft), ("xp", xp), ("influence", influence), ("currency", currency)):
+                row[k] = int(row.get(k) or 0) + int(v or 0)
+        self._save_history()
+
     # -- events ------------------------------------------------------------
     def event(self, msg: str) -> None:
         with self._lock:
@@ -343,6 +397,11 @@ class LiveState:
                 "stats": self.stats,
                 "stats_ts": self.stats_ts,
                 "leaderboard": self.leaderboard,
+                "wdgwars_days": dict(sorted(self.wdgwars_days.items())[-30:]),
+                "wardrift": {**self.wardrift,
+                             "days": dict(sorted(self.wardrift_days.items())[-30:]),
+                             "earned_total": {k: sum(int(d.get(k) or 0) for d in self.wardrift_days.values())
+                                              for k in ("aircraft", "xp", "influence", "currency")}},
                 "leaderboard_ts": self.leaderboard_ts,
                 "prereqs": self.prereqs,
                 "config": self.config_summary,

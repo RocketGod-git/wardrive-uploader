@@ -56,6 +56,22 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    _STATIC_TYPES = {".png": "image/png", ".svg": "image/svg+xml", ".ico": "image/x-icon"}
+
+    def _send_static(self, name: str) -> None:
+        p = _WEBDIR / "static" / name
+        ctype = self._STATIC_TYPES.get(p.suffix.lower())
+        if "/" in name or "\\" in name or not ctype or not p.is_file():
+            self._send_json({"error": "not found"}, 404)
+            return
+        body = p.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "max-age=86400")
+        self.end_headers()
+        self.wfile.write(body)
+
     def _read_body(self) -> dict:
         try:
             n = int(self.headers.get("Content-Length", "0") or "0")
@@ -112,6 +128,12 @@ class _Handler(BaseHTTPRequestHandler):
             cs = (q.get("cs") or [""])[0]
             from . import enrich
             self._send_json(enrich.full(hex_id, cs))
+        elif path.startswith("/static/"):
+            self._send_static(path[len("/static/"):])
+        elif path == "/api/wardrift/leaderboard":
+            q = urllib.parse.parse_qs(parts.query)
+            self._send_json(self.app.core.wardrift_board((q.get("timeframe") or ["all_time"])[0],
+                                                         (q.get("scope") or ["global"])[0]))
         elif path == "/api/geocode":
             q = (urllib.parse.parse_qs(parts.query).get("q") or [""])[0]
             from . import geocode
@@ -147,6 +169,12 @@ class _Handler(BaseHTTPRequestHandler):
             elif path == "/api/config":
                 self.app.update_config(body)
                 self._send_json({"ok": True, "config": self.app.core.state.config_summary})
+            elif path == "/api/wardrift/sign-in":
+                self._send_json(self.app.wardrift_sign_in(body.get("username") or "",
+                                                          body.get("password") or ""))
+            elif path == "/api/wardrift/sign-out":
+                self.app.wardrift_sign_out()
+                self._send_json({"ok": True})
             elif path == "/api/radio-position":
                 lat, lon = float(body.get("lat")), float(body.get("lon"))
                 if not (-90 <= lat <= 90 and -180 <= lon <= 180) or (lat == 0 and lon == 0):

@@ -115,6 +115,7 @@ class UploaderCore:
         self.wardrift_mesh = wardrift.MeshReporter(config_dir() / "wardrift_mesh.json")
         self._wardrift_mesh_lock = threading.Lock()   # cycle and radio report share sequence numbers
         self._wardrift_report_error = ""
+        self._wd_boards: dict[tuple[str, str], dict] = {}
 
     def client(self) -> WDGWarsClient:
         return WDGWarsClient(self.cfg.get("api_key", ""),
@@ -134,6 +135,8 @@ class UploaderCore:
         self.state.config_summary = {
             "has_api_key": bool((c.get("api_key") or "").strip()),
             "has_wardrift_key": bool((c.get("wardrift_api_key") or "").strip()),
+            "has_wardrift_session": bool(c.get("wardrift_session")),
+            "wardrift_username": c.get("wardrift_username", "") if c.get("wardrift_session") else "",
             "upload_device_label": c.get("upload_device_label", ""),
             "upload_device_default": device_label(),
             "interval_hours": c.get("interval_hours", 4),
@@ -256,6 +259,7 @@ class UploaderCore:
         return len(nodes)
 
     def refresh_stats(self) -> None:
+        self.refresh_wardrift()
         client = self.client()
         if not self.cfg.get("api_key"):
             return
@@ -263,6 +267,7 @@ class UploaderCore:
         if stats:
             self.state.stats = stats
             self.state.stats_ts = time.time()
+            self.state.record_wdgwars_totals(stats)
         lb = client.get_leaderboard()
         if lb:
             self.state.leaderboard = lb
@@ -280,6 +285,45 @@ class UploaderCore:
             self._last_report = rep
         return rep
 
+    # -- Wardrift account (optional sign-in) ---------------------------------
+    def refresh_wardrift(self) -> None:
+        """Fetch the signed-in player's stats and the all-time leaderboard."""
+        token = self.cfg.get("wardrift_session") or ""
+        if not token:
+            self.state.wardrift.update(session="signed_out", account={}, leaderboard={}, error="")
+            return
+        acct = self.state.wardrift.get("account") or {}
+        if self.state.wardrift.get("session") == "ok" and time.time() - acct.get("fetched", 0) < 290:
+            return
+        try:
+            acct = wardrift.account(token)
+            lb = wardrift.leaderboard(token)
+            self.state.wardrift.update(session="ok", account=acct, leaderboard=lb, error="")
+            self._wd_boards[("all_time", "global")] = lb
+        except wardrift.SessionExpired:
+            self.state.wardrift.update(session="expired", error="")
+        except Exception as e:  # noqa: BLE001 - keep the last good stats on a network blip
+            self.state.wardrift["error"] = str(e)
+            log.debug("Wardrift stats refresh failed: %s", e)
+
+    def wardrift_board(self, timeframe: str, scope: str = "global") -> dict:
+        """One Wardrift leaderboard, cached for a minute."""
+        token = self.cfg.get("wardrift_session") or ""
+        if not token:
+            return {"error": "signed_out"}
+        cached = self._wd_boards.get((timeframe, scope))
+        if cached and time.time() - cached.get("fetched", 0) < 60:
+            return cached
+        try:
+            lb = wardrift.leaderboard(token, timeframe, scope)
+        except wardrift.SessionExpired:
+            self.state.wardrift.update(session="expired")
+            return {"error": "expired"}
+        except Exception as e:  # noqa: BLE001
+            return cached or {"error": str(e)}
+        self._wd_boards[(lb["timeframe"], lb["scope"])] = lb
+        return lb
+
     def _upload_wardrift(self, key: str, rep: CycleReport) -> None:
         """Send aircraft staged for Wardrift (independent of the WDGWars key)."""
         try:
@@ -292,6 +336,7 @@ class UploaderCore:
                 key, label=self.cfg.get("upload_device_label", "")).upload_aircraft(recs)
             if res.sent:
                 self.state.mark_wardrift_uploaded(res.sent)
+                self.state.add_wardrift_earned(res.credited, res.exp, res.influence, res.currency)
             rep.wardrift = res.summary()
             if res.error:
                 rep.errors.append(f"wardrift: {res.error}")

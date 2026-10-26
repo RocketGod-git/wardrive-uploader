@@ -20,6 +20,7 @@ datas = collect_data_files("meshcore")
 datas += [
     ("wdgwars_uploader/webui/dashboard.html", "wdgwars_uploader/webui"),
     ("wdgwars_uploader/webui/map.html", "wdgwars_uploader/webui"),
+    ("wdgwars_uploader/webui/static", "wdgwars_uploader/webui/static"),
 ]
 
 # Optional native-window backend: only bundle if pywebview is installed.

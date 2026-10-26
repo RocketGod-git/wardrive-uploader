@@ -161,6 +161,33 @@ class UploaderApp:
         if key_changed:
             threading.Thread(target=self.core.refresh_stats, daemon=True).start()
 
+    def wardrift_sign_in(self, username: str, password: str) -> dict:
+        """Sign in to Wardrift for stats. Only the session token is saved."""
+        from . import wardrift
+        username = (username or "").strip()
+        if not username or not password:
+            return {"ok": False, "error": "enter your Wardrift username and password"}
+        try:
+            s = wardrift.sign_in(username, password)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "error": str(e)}
+        self.cfg.update({"wardrift_session": s["token"], "wardrift_session_expires": s["expires_at"],
+                         "wardrift_username": s["username"]})
+        self.cfg.save()
+        self.core.poll_devices()   # refresh the config summary
+        threading.Thread(target=self.core.refresh_wardrift, daemon=True).start()
+        return {"ok": True, "username": s["username"]}
+
+    def wardrift_sign_out(self) -> None:
+        from . import wardrift
+        token = self.cfg.get("wardrift_session") or ""
+        self.cfg.update({"wardrift_session": "", "wardrift_session_expires": ""})
+        self.cfg.save()
+        self.core.refresh_wardrift()
+        self.core.poll_devices()
+        if token:
+            threading.Thread(target=wardrift.sign_out, args=(token,), daemon=True).start()
+
     def install_dump1090_async(self) -> None:
         def work():
             try:
