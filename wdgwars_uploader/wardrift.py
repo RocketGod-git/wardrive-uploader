@@ -50,6 +50,10 @@ LOG_BODY_MAX = 4000   # response characters kept in the log per mesh call
 log = logging.getLogger("wdgwars.wardrift")
 
 
+def _key_rejected(status: int) -> str:
+    return f"key rejected (HTTP {status}), update the Wardrift key in Settings"
+
+
 @dataclass
 class WardriftResult:
     ok: bool = True
@@ -61,7 +65,7 @@ class WardriftResult:
 
     def summary(self) -> str:
         if not self.sent:
-            return f"failed: {self.error}" if self.error else "nothing to send"
+            return self.error or "nothing to send"
         s = f"{len(self.sent)} sent, {self.credited} new, +{self.exp} XP"
         return s + (f", then failed: {self.error}" if self.error else "")
 
@@ -109,7 +113,7 @@ class MeshResult:
 
     def summary(self) -> str:
         if not self.nodes:
-            return f"failed: {self.error}" if self.error else "nothing new"
+            return self.error or "nothing new"
         s = f"{self.nodes} nodes sent" + (", telemetry" if self.telemetry else "")
         return s + (f", then failed: {self.error}" if self.error else "")
 
@@ -400,13 +404,15 @@ class WardriftClient:
             body = _json(resp)
             if resp.status_code == 200:
                 return body, ""
+            if resp.status_code in (401, 403):
+                return body, _key_rejected(resp.status_code)
             code = body.get("error") or f"HTTP {resp.status_code}"
             # Two uploads on one key at the same moment; the same file is retried.
             if resp.status_code == 409 and code == "sequence_conflict" and attempt < 2:
                 time.sleep(1.0 + attempt)
                 continue
             msg = body.get("message")
-            return body, f"{code}: {msg}" if msg else code
+            return body, f"{code}: {msg}" if msg and msg != code else code
         return {}, "sequence_conflict"
 
     def upload_mesh(self, nodes: list[dict[str, Any]], radios: list[dict[str, Any]],
@@ -472,6 +478,8 @@ class WardriftClient:
 def _mesh_error(status: int, text: str) -> str:
     if not status:
         return text or "no response"
+    if status in (401, 403):
+        return _key_rejected(status)
     data = _mesh_json(text)
     if data.get("error") or data.get("message"):
         code, msg = data.get("error"), data.get("message")

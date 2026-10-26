@@ -292,7 +292,8 @@ class UploaderCore:
             rep.wardrift = res.summary()
             if res.error:
                 rep.errors.append(f"wardrift: {res.error}")
-                self.state.event(f"Wardrift upload failed: {res.summary()}")
+                self.state.event(("Wardrift upload partial: " if res.sent
+                                  else "Wardrift upload failed: ") + res.summary())
             else:
                 self.state.event(f"Wardrift uploaded: {res.summary()}")
         except Exception as e:
@@ -311,7 +312,8 @@ class UploaderCore:
             rep.wardrift_mesh = res.summary()
             if res.error:
                 rep.errors.append(f"wardrift mesh: {res.error}")
-                self.state.event(f"Wardrift mesh: {res.summary()}")
+                self.state.event(("Wardrift mesh partial: " if res.nodes
+                                  else "Wardrift mesh upload failed: ") + res.summary())
             elif res.nodes:
                 self.state.event(f"Wardrift mesh uploaded: {res.summary()}")
         except Exception as e:
