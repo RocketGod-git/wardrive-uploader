@@ -91,7 +91,7 @@ h1{font-size:20px;letter-spacing:3px;margin:0;font-weight:700;
   text-shadow:0 0 20px rgba(0,229,255,.5);font-variant-numeric:tabular-nums}
 .counter.mag .num{color:var(--mag);text-shadow:0 0 20px rgba(255,45,149,.5)}
 .counter .lbl{margin-top:8px;font-size:11px;letter-spacing:2px;color:var(--muted);text-transform:uppercase}
-.counter .sess{font-size:10px;color:var(--muted);margin-top:4px}
+.counter .sess{font-size:10px;color:var(--muted);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .burst{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;
   color:var(--green);text-shadow:0 0 16px var(--green);opacity:0;pointer-events:none}
 .burst.show{animation:burst 1.4s ease-out}
@@ -451,16 +451,18 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
       </div>
     </div>
 
-    <!-- counters: NEW captures uploaded this session (the exciting number) -->
-    <div class="card col-4" title="Big number = unique targets you've collected this session (with a position). Small number = currently staged for the next upload. Your all-time account totals are in the stats panel.">
-      <h2>Collected this session ↑</h2>
+    <!-- counters: unique targets collected since the app started -->
+    <div class="card col-4" title="Big number = unique targets with a position collected since the app started. Below it: everything this PC has collected, and what is staged for the next upload. Your account totals are in the game cards.">
+      <h2>Collected since app start ↑</h2>
       <div class="counters">
         <div class="counter" id="c-air">
           <div class="num" id="n-air">0</div><div class="lbl">Aircraft</div>
+          <div class="sess" id="t-air"></div>
           <div class="sess" id="s-air">0 queued</div><div class="burst" id="b-air"></div>
         </div>
         <div class="counter mag" id="c-mesh">
           <div class="num" id="n-mesh">0</div><div class="lbl">Mesh</div>
+          <div class="sess" id="t-mesh"></div>
           <div class="sess" id="s-mesh">0 queued</div><div class="sess" id="s-mesh-wd" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div><div class="burst" id="b-mesh"></div>
         </div>
       </div>
@@ -709,8 +711,10 @@ function render(s){
   $("#d-mesh-t").textContent = mtxt;
   $("#d-up").textContent = s.upload_in_progress ? "UPLOADING…" : "idle";
 
-  // Big number = unique targets COLLECTED this session (includes the queued).
-  const newA=(s.collected&&s.collected.aircraft)||0, newM=(s.collected&&s.collected.mesh)||0;
+  // Big number = unique targets collected since the app started (includes the queued).
+  const col=s.collected||{}, newA=col.aircraft||0, newM=col.mesh||0;
+  $("#t-air").textContent = (col.aircraft_all||0).toLocaleString()+" all time on this PC";
+  $("#t-mesh").textContent = (col.mesh_all||0).toLocaleString()+" all time on this PC";
   animateNum($("#n-air"), newA);
   animateNum($("#n-mesh"), newM);
   $("#s-air").textContent = (s.pending.aircraft||0)+" staged to send";

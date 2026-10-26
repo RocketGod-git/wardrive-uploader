@@ -79,8 +79,14 @@ class LiveState:
 
         # Counters
         self.session_uploaded = {"aircraft": 0, "mesh": 0}   # NEW to account (imported)
-        self._seen_aircraft: set[str] = set()   # unique collected this session
-        self._seen_mesh: set[str] = set()
+        self._seen_aircraft: set[str] = set()   # unique positioned targets since the app started
+        self._seen_mesh: set[str] = set()       # mesh nodes heard since the app started
+        # Every unique target this PC has collected, kept across restarts.
+        self._all_aircraft: set[str] = set()
+        self._all_mesh: set[str] = set()
+        self._all_dirty = False
+        self._all_saved = 0.0
+        self._load_collected()
 
         # Is an ADS-B source (dump1090) actually serving? None=unknown until first
         # poll, True=serving (even if the sky is empty), False=not reachable.
@@ -136,6 +142,9 @@ class LiveState:
                 if not h:
                     continue
                 self._seen_aircraft.add(h)
+                if h not in self._all_aircraft:
+                    self._all_aircraft.add(h)
+                    self._all_dirty = True
                 if (self.wardrift_enabled and isinstance(r.get("_obs_ts"), (int, float))
                         and self._wardrift_sent.get(h) != _utc_day(r["_obs_ts"])):
                     self._wardrift_acc[h] = r
@@ -145,6 +154,7 @@ class LiveState:
             self._cap(self._aircraft_acc)
             self._cap(self._wardrift_acc)
         self.persist()
+        self.save_collected()
 
     # Exactly the fields WDGWars accepts for a mesh node — anything else on a
     # display node (uploadable flag, telemetry) is dropped before upload.
@@ -163,12 +173,19 @@ class LiveState:
             for n in nodes:
                 nid = n.get("node_id")
                 if nid and n.get("uploadable") and n.get("lat") is not None and n.get("lon") is not None:
-                    self._seen_mesh.add(nid)
+                    # The node store carries nodes over from earlier runs; only
+                    # ones heard since this start count toward "since start".
+                    if float(n.get("heard_ts") or 0) >= self.started:
+                        self._seen_mesh.add(nid)
+                    if nid not in self._all_mesh:
+                        self._all_mesh.add(nid)
+                        self._all_dirty = True
                     if self._recently_sent(self._sent_mesh, nid):
                         continue   # already uploaded and still confirmed — don't re-stage
                     self._mesh_acc[nid] = {k: n[k] for k in self._MESH_UPLOAD_FIELDS if k in n}
             self._cap(self._mesh_acc)
         self.persist()
+        self.save_collected()
 
     def _cap(self, d: dict) -> None:
         if len(d) > self._ACC_CAP:
@@ -303,6 +320,34 @@ class LiveState:
         except OSError:
             pass
 
+    # -- all-time collected ------------------------------------------------
+    def _collected_path(self):
+        return config_dir() / "collected.json"
+
+    def _load_collected(self) -> None:
+        try:
+            data = json.loads(self._collected_path().read_text(encoding="utf-8"))
+            self._all_aircraft = {str(x) for x in data.get("aircraft") or []}
+            self._all_mesh = {str(x) for x in data.get("mesh") or []}
+        except (OSError, ValueError, AttributeError):
+            pass
+
+    def save_collected(self, force: bool = False) -> None:
+        now = time.time()
+        with self._lock:
+            if not self._all_dirty or (not force and now - self._all_saved < 60):
+                return
+            self._all_dirty, self._all_saved = False, now
+            payload = json.dumps({"aircraft": sorted(self._all_aircraft), "mesh": sorted(self._all_mesh)})
+        try:
+            path = self._collected_path()
+            fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(payload)
+            os.replace(tmp, path)
+        except OSError:
+            pass
+
     # -- dashboard history -------------------------------------------------
     def _history_path(self):
         return config_dir() / "history.json"
@@ -389,7 +434,8 @@ class LiveState:
                 "mesh_seen_ts": self.mesh_seen_ts,
                 "adsb_source_ok": self.adsb_source_ok,
                 "session_uploaded": self.session_uploaded,
-                "collected": {"aircraft": len(self._seen_aircraft), "mesh": len(self._seen_mesh)},
+                "collected": {"aircraft": len(self._seen_aircraft), "mesh": len(self._seen_mesh),
+                              "aircraft_all": len(self._all_aircraft), "mesh_all": len(self._all_mesh)},
                 "upload_in_progress": self.upload_in_progress,
                 "last_cycle": self.last_cycle,
                 "next_run_ts": self.next_run_ts,

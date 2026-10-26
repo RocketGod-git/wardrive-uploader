@@ -291,6 +291,7 @@ class UploaderApp:
         self._stop.set()
         try:
             self.state.persist(force=True)   # never lose the un-uploaded queue
+            self.state.save_collected(force=True)
         except Exception:
             pass
         for stopper in (self.scheduler.stop, self.poller.stop, self.core.capture.stop,
