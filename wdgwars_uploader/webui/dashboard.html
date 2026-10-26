@@ -22,21 +22,40 @@
 ::-webkit-scrollbar-thumb:hover{background:linear-gradient(180deg,var(--cyan),#14b9cf);
   box-shadow:0 0 8px rgba(0,229,255,.6),inset 0 0 4px rgba(0,229,255,.6)}
 ::-webkit-scrollbar-corner{background:transparent}
-html,body{margin:0;height:100%}
+html,body{margin:0;min-height:100%}
+html{background:var(--bg)}
 body{
-  background:
-    radial-gradient(1200px 600px at 80% -10%, rgba(255,45,149,.08), transparent 60%),
-    radial-gradient(1000px 700px at -10% 110%, rgba(0,229,255,.08), transparent 55%),
-    var(--bg);
+  background:var(--bg);
   color:var(--txt);
   font-family:ui-monospace,"Cascadia Code","JetBrains Mono",Consolas,monospace;
   font-size:13px; line-height:1.5; overflow-x:hidden;
 }
-body::before{ /* scanline grid */
-  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
-  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
-  background-size:34px 34px; mask:linear-gradient(180deg,transparent,#000 30%,#000 70%,transparent);
-}
+/* backdrop: one fixed layer behind everything, so nothing tiles or seams on a long page */
+.bgfx{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;background:var(--bg)}
+.bgfx>div{position:absolute}
+.bgfx .glow{width:90vmax;height:90vmax;border-radius:50%;will-change:transform}
+.bgfx .g1{left:-38vmax;top:-42vmax;background:radial-gradient(circle,rgba(0,229,255,.16),rgba(0,229,255,.05) 35%,transparent 65%);
+  animation:drift1 34s ease-in-out infinite alternate}
+.bgfx .g2{right:-40vmax;top:-30vmax;background:radial-gradient(circle,rgba(255,45,149,.13),rgba(255,45,149,.04) 35%,transparent 65%);
+  animation:drift2 41s ease-in-out infinite alternate}
+.bgfx .g3{left:20vw;bottom:-60vmax;background:radial-gradient(circle,rgba(255,226,0,.07),transparent 60%);
+  animation:drift1 47s ease-in-out infinite alternate-reverse}
+@keyframes drift1{to{transform:translate(9vmax,7vmax) scale(1.08)}}
+@keyframes drift2{to{transform:translate(-8vmax,10vmax) scale(1.12)}}
+.bgfx .grid{inset:0;background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:34px 34px;-webkit-mask:radial-gradient(ellipse 85% 75% at 50% 35%,#000 20%,transparent 80%);
+  mask:radial-gradient(ellipse 85% 75% at 50% 35%,#000 20%,transparent 80%)}
+.bgfx .sweep{left:50%;top:38%;width:160vmax;height:160vmax;margin:-80vmax 0 0 -80vmax;will-change:transform;
+  background:conic-gradient(from 0deg,transparent 0 84%,rgba(0,229,255,.025) 92%,rgba(0,229,255,.09) 99.2%,rgba(0,229,255,.02) 100%);
+  -webkit-mask:radial-gradient(circle,#000 0,rgba(0,0,0,.6) 30%,transparent 62%);
+  mask:radial-gradient(circle,#000 0,rgba(0,0,0,.6) 30%,transparent 62%);animation:spin 16s linear infinite}
+.bgfx .rings{left:50%;top:38%;width:120vmax;height:120vmax;margin:-60vmax 0 0 -60vmax;border-radius:50%;
+  background:repeating-radial-gradient(circle,transparent 0 11.5vmax,rgba(0,229,255,.05) 11.5vmax calc(11.5vmax + 1px));
+  -webkit-mask:radial-gradient(circle,#000 25%,transparent 70%);mask:radial-gradient(circle,#000 25%,transparent 70%)}
+@keyframes spin{to{transform:rotate(360deg)}}
+.bgfx .scan{inset:0;background:repeating-linear-gradient(180deg,rgba(255,255,255,.018) 0 1px,transparent 1px 3px)}
+.bgfx .vig{inset:0;background:radial-gradient(ellipse at 50% 40%,transparent 50%,rgba(0,0,0,.6) 100%)}
+@media (prefers-reduced-motion:reduce){.bgfx .glow,.bgfx .sweep{animation:none}}
 .wrap{position:relative; z-index:1; max-width:1400px; margin:0 auto; padding:18px 20px 60px}
 a{color:var(--cyan); text-decoration:none} a:hover{text-decoration:underline}
 
@@ -414,6 +433,7 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
 </style>
 </head>
 <body>
+<div class="bgfx" aria-hidden="true"><div class="glow g1"></div><div class="glow g2"></div><div class="glow g3"></div><div class="grid"></div><div class="rings"></div><div class="sweep"></div><div class="scan"></div><div class="vig"></div></div>
 <div class="wrap">
   <header>
     <div class="brand">
