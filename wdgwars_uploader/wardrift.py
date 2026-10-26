@@ -42,7 +42,7 @@ CHUNK = 5000   # aircraft per file, well under the 10 MiB / 200,000-record limit
 # user agents (error 1010).
 MESH_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
            f"Chrome/130.0.0.0 Safari/537.36 wdgwars-uploader/{__version__}")
-MESH_CHUNK = 400   # nodes per batch
+MESH_CHUNK = 100   # nodes per batch; larger batches can outlast the request timeout
 MESH_BACKFILL_SECS = 72 * 3600   # how far back the first mesh upload reaches
 MESH_RETRIES = 2   # resends of one batch after a network error, 5xx or sequence conflict
 LOG_BODY_MAX = 4000   # response characters kept in the log per mesh call
@@ -330,11 +330,15 @@ class MeshReporter:
 
     def plan(self, nodes: list[dict[str, Any]], radios: list[dict[str, Any]],
              now: float) -> list[dict[str, Any]]:
-        """Split everything due into request bodies of at most MESH_CHUNK nodes."""
+        """Request bodies for everything due: the local radios' telemetry on its
+        own first, since it is small and is what availability is measured from,
+        then heard nodes in batches of at most MESH_CHUNK."""
         items = self.items(nodes, radios, now)
-        return [{"items": items[i:i + MESH_CHUNK],
-                 "body": self.batch_body(items[i:i + MESH_CHUNK], now)}
-                for i in range(0, len(items), MESH_CHUNK)]
+        own = [it for it in items if it.get("radio")]
+        rest = [it for it in items if not it.get("radio")]
+        parts = ([own] if own else []) + [rest[i:i + MESH_CHUNK]
+                                          for i in range(0, len(rest), MESH_CHUNK)]
+        return [{"items": part, "body": self.batch_body(part, now)} for part in parts]
 
     def accept(self, items: list[dict[str, Any]]) -> None:
         for it in items:
