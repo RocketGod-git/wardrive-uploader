@@ -1,5 +1,5 @@
 @echo off
-REM Build a standalone WDGWarsUploader.exe (no Python needed to run the result).
+REM Build a standalone WardriveUploader.exe (no Python needed to run the result).
 setlocal
 cd /d "%~dp0"
 
@@ -16,11 +16,11 @@ echo Building exe...
 REM Note: no --clean. Under OneDrive/synced folders --clean's rmtree can fail
 REM with "Access is denied" while a file is being synced. Delete build\ yourself
 REM if you want a from-scratch build.
-if exist "dist\WDGWarsUploader.exe" del /q "dist\WDGWarsUploader.exe"
+if exist "dist\WardriveUploader.exe" del /q "dist\WardriveUploader.exe"
 ".venv\Scripts\python.exe" -m PyInstaller --noconfirm wdgwars_uploader.spec || goto :err
 
 echo.
-echo Done. The executable is at:  dist\WDGWarsUploader.exe
+echo Done. The executable is at:  dist\WardriveUploader.exe
 goto :eof
 
 :err

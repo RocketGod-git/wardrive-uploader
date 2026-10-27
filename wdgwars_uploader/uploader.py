@@ -89,6 +89,23 @@ class WDGWarsClient:
         except requests.RequestException:
             return {}
 
+    def upload_history(self, limit: int = 50) -> dict[str, Any]:
+        """Recent uploads, newest first (/api/upload-history; the server caps
+        ``limit`` at 50). Counts live under each row's ``result`` object."""
+        try:
+            resp = self.session.get(f"{BASE}/api/upload-history", params={"limit": max(1, min(50, limit))},
+                                    timeout=self.timeout)
+        except requests.RequestException as e:
+            return {"ok": False, "error": f"could not reach WDGWars: {e}", "list": []}
+        if resp.status_code in (401, 403):
+            return {"ok": False, "error": "WDGWars did not accept the API key", "list": []}
+        if resp.status_code != 200:
+            return {"ok": False, "error": f"WDGWars answered HTTP {resp.status_code}", "list": []}
+        data = _safe_json(resp)
+        rows = data if isinstance(data, list) else next(
+            (data.get(k) for k in ("history", "uploads", "results", "items") if isinstance(data.get(k), list)), [])
+        return {"ok": True, "list": [r for r in rows if isinstance(r, dict)]}
+
     def get_leaderboard(self) -> dict[str, Any]:
         """/api/leaderboard: today / week / all_time / gangs / hunters."""
         try:
@@ -97,6 +114,23 @@ class WDGWarsClient:
             return data if resp.status_code == 200 else {}
         except requests.RequestException:
             return {}
+
+    # -- Wi-Fi + Bluetooth (wardriving) --------------------------------------
+    def upload_wardrive_csv(self, gz: bytes, name: str) -> tuple[bool, str]:
+        """A gzipped WigleWifi CSV to /api/upload-csv. The server queues it and
+        the job status is not readable with an API key, so an accepted file is
+        reported as sent."""
+        files = {"file": (name, gz, "application/gzip")}
+        try:
+            resp = self.session.post(f"{BASE}/api/upload-csv", files=files, timeout=max(self.timeout, 120))
+        except requests.RequestException as e:
+            return False, str(e)
+        data = _safe_json(resp)
+        if resp.status_code in (200, 202) and data.get("ok", True):
+            r = data.get("result") or data
+            bits = [f"{k}={r[k]}" for k in ("imported", "already_seen", "skipped") if k in r]
+            return True, ", ".join(bits) or ("queued" if data.get("queued") else "accepted")
+        return False, data.get("error") or f"HTTP {resp.status_code}"
 
     # -- ADS-B -------------------------------------------------------------
     def upload_aircraft_json(self, aircraft_obj: dict[str, Any]) -> UploadResult:

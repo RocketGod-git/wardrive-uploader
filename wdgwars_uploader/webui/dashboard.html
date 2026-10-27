@@ -86,6 +86,17 @@ h1{font-size:20px;letter-spacing:3px;margin:0;font-weight:700;
 .card::before{content:"";position:absolute;top:0;left:0;width:26px;height:2px;background:var(--cyan);box-shadow:0 0 10px var(--cyan)}
 .card::after{content:"";position:absolute;top:0;left:0;width:2px;height:26px;background:var(--cyan);box-shadow:0 0 10px var(--cyan)}
 .card h2{font-size:11px;letter-spacing:2px;color:var(--muted);margin:0 0 12px;text-transform:uppercase;font-weight:600}
+/* collapse / expand */
+.card>h2.chead{display:flex;align-items:center;gap:8px}
+.chead h2,.card>h2.chead{cursor:pointer;user-select:none}
+.cbtn{flex:none;margin-left:auto;width:26px;height:22px;border:1px solid var(--line);border-radius:7px;background:#070c12;color:var(--muted);
+  display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:11px;transition:transform .2s,color .2s,border-color .2s}
+.lbhead .cbtn,.uphead .cbtn{margin-left:8px}
+.cbtn:hover{color:var(--cyan);border-color:var(--cyan-dim)}
+.card.collapsed{align-self:start;padding-bottom:4px}
+.card.collapsed>*:not(.chead){display:none!important}
+.card.collapsed .cbtn{transform:rotate(-90deg)}
+.card.collapsed>.chead{margin-bottom:8px}
 .col-4{grid-column:span 4}.col-6{grid-column:span 6}.col-8{grid-column:span 8}.col-3{grid-column:span 3}
 @media(max-width:1000px){.col-4,.col-6,.col-8,.col-3{grid-column:span 12}}
 
@@ -100,16 +111,48 @@ h1{font-size:20px;letter-spacing:3px;margin:0;font-weight:700;
 .dot.off{background:var(--red);box-shadow:0 0 8px var(--red)}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
 .dev .n{font-weight:700;color:#dfe} .dev .d{font-size:11px;color:var(--muted);overflow-wrap:anywhere}
+.dev>div:nth-child(2){min-width:0;flex:1}
+.dev .n{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dev.isoff{opacity:.55}
+.counter.clickable{cursor:pointer} .counter.clickable:hover{border-color:var(--amber)}
+.keytbl{width:100%;border-collapse:collapse;font-size:12px}
+.keytbl th{text-align:left;font-size:9px;letter-spacing:1px;color:var(--muted);text-transform:uppercase;padding:5px 6px;border-bottom:1px solid var(--line)}
+.keytbl td{padding:6px;border-bottom:1px solid #0e1620;white-space:nowrap}
+.keytbl td.k{color:var(--green);font-weight:700;user-select:all}
+.keytbl td.s{max-width:180px;overflow:hidden;text-overflow:ellipsis;color:#dfe}
+.dev.clickable{cursor:pointer} .dev.clickable:hover{border-color:var(--cyan-dim)}
+.qrbox{background:#fff;border-radius:12px;padding:10px;display:inline-block;margin:6px auto 12px;line-height:0}
+.qrbox svg{width:250px;height:250px}
+.steps{text-align:left;font-size:13px;margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px}
+.steps b{color:#dfe}
+.qrstat{margin:10px 0 2px;font-size:13px;font-weight:700}
+.hwsw{position:relative;flex:none;width:30px;height:17px;cursor:pointer;margin-left:auto}
+.hwsw input{position:absolute;opacity:0;width:0;height:0}
+.hwsw span{position:absolute;inset:0;border-radius:17px;background:#1a2632;border:1px solid var(--line);transition:.15s}
+.hwsw span:before{content:"";position:absolute;width:11px;height:11px;left:2px;top:2px;border-radius:50%;background:var(--muted);transition:.15s}
+.hwsw input:checked+span{background:rgba(37,244,167,.18);border-color:rgba(37,244,167,.5)}
+.hwsw input:checked+span:before{transform:translateX(13px);background:var(--green)}
+.hwnote{margin-top:10px;font-size:12px;color:var(--amber)}
+.hwnote:empty{display:none}
 
 /* counters */
-.counters{display:flex;gap:14px}
-.counter{flex:1;text-align:center;border:1px solid var(--line);border-radius:10px;padding:16px 10px;position:relative;
+.counters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+@media(max-width:600px){.counters{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.counter{min-width:0;text-align:center;border:1px solid var(--line);border-radius:10px;padding:12px 6px;position:relative;
   background:radial-gradient(circle at 50% 0,rgba(0,229,255,.06),transparent 70%)}
 .counter.mag{background:radial-gradient(circle at 50% 0,rgba(255,45,149,.07),transparent 70%)}
-.counter .num{font-size:52px;font-weight:800;line-height:1;letter-spacing:2px;color:var(--cyan);
+.counter .num{font-size:36px;font-weight:800;line-height:1;letter-spacing:2px;color:var(--cyan);
   text-shadow:0 0 20px rgba(0,229,255,.5);font-variant-numeric:tabular-nums}
 .counter.mag .num{color:var(--mag);text-shadow:0 0 20px rgba(255,45,149,.5)}
-.counter .lbl{margin-top:8px;font-size:11px;letter-spacing:2px;color:var(--muted);text-transform:uppercase}
+.counter.wifi{background:radial-gradient(circle at 50% 0,rgba(37,244,167,.07),transparent 70%)}
+.counter.wifi .num{color:var(--green);text-shadow:0 0 20px rgba(37,244,167,.45)}
+.counter.ble{background:radial-gradient(circle at 50% 0,rgba(124,92,255,.09),transparent 70%)}
+.counter.ble .num{color:#8f74ff;text-shadow:0 0 20px rgba(124,92,255,.5)}
+.counter.hs{background:radial-gradient(circle at 50% 0,rgba(255,179,0,.07),transparent 70%)}
+.counter.hs .num{color:var(--amber);text-shadow:0 0 20px rgba(255,179,0,.45)}
+.counter.pmk{background:radial-gradient(circle at 50% 0,rgba(255,107,61,.07),transparent 70%)}
+.counter.pmk .num{color:#ff6b3d;text-shadow:0 0 20px rgba(255,107,61,.45)}
+.counter .lbl{margin-top:6px;font-size:10px;letter-spacing:2px;color:var(--muted);text-transform:uppercase}
 .counter .sess{font-size:10px;color:var(--muted);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .burst{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;
   color:var(--green);text-shadow:0 0 16px var(--green);opacity:0;pointer-events:none}
@@ -250,6 +293,10 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
 .updbar .spacer{flex:1}
 .updrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:12px}
 .updrow .ver{font-size:18px;font-weight:800;color:#eef;letter-spacing:1px}
+.feeds2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
+@media(max-width:900px){.feeds2{grid-template-columns:1fr}}
+.feeds2 .feedcol-div{border-left:1px solid var(--line);padding-left:16px}
+.sec{font-size:10px;color:var(--muted)}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:50;
   background:#0a141c;border:1px solid var(--cyan);color:var(--cyan);padding:10px 18px;border-radius:8px;
   box-shadow:0 0 22px rgba(0,229,255,.35);opacity:0;transition:.3s;letter-spacing:1px}
@@ -265,7 +312,7 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
 .pchip b{color:#dfe;letter-spacing:1px}
 .pchip .dot{width:8px;height:8px}
 .pchip.off{opacity:.55}
-.plats{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,520px),1fr));gap:14px}
+.plats{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr));gap:14px}
 .plat{container-type:inline-size;position:relative;overflow:hidden;border-radius:12px;padding:16px 18px 14px;
   border:1px solid var(--line);background:linear-gradient(180deg,#0b121b,#060a10)}
 .plat::before{content:"";position:absolute;inset:0 0 auto 0;height:2px}
@@ -284,6 +331,16 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
 .ph .usub{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fdot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;vertical-align:0}
 .ranks{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.ph{flex-wrap:wrap}
+.ph .ranks{flex-basis:100%;display:grid;grid-template-columns:repeat(auto-fit,minmax(0,1fr));gap:8px}
+.ph .ranks .rk{padding:5px 8px}
+.ph .ranks .rk b{font-size:18px}
+.ph .ranks:empty{display:none}
+.uprow{display:grid;grid-template-columns:auto 1fr auto auto;gap:4px 10px;font-size:11px;align-items:center}
+.uprow .t{color:var(--muted);white-space:nowrap}
+.uprow .id{color:#9fb0c0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.uprow b{color:var(--green);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.uprow i{font-style:normal;color:#8f74ff;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
 .rk{border:1px solid var(--line);border-radius:8px;padding:3px 9px;text-align:center;line-height:1.15;background:#070c12}
 .rk b{display:block;font-size:16px;color:#eef;font-variant-numeric:tabular-nums}
 .rk span{font-size:9px;letter-spacing:1px;color:var(--muted);text-transform:uppercase;white-space:nowrap}
@@ -352,6 +409,53 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
 .lbcenter{max-width:420px}
 .plat>.cta.fill{flex:1;justify-content:center;align-items:center;text-align:center}
 .lbcard.wd::before,.lbcard.wd::after{background:var(--wd);box-shadow:0 0 10px var(--wd)}
+.lbcard.wg::before,.lbcard.wg::after{background:var(--green);box-shadow:0 0 10px var(--green)}
+.wglogo{display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:#04100b;color:var(--green);
+  font-weight:900;border:2px solid var(--green);box-shadow:0 0 14px rgba(37,244,167,.35);flex:none}
+.lbhead .wglogo{width:28px;height:28px;font-size:14px;border-width:1px}
+.lbcard.wg .lbhead .lbme b{color:var(--green)}
+.lbx.wg tr.me td{background:rgba(37,244,167,.07)}
+.lbx.wg tr.me .nm{color:var(--green)}
+.lbx tr.click{cursor:pointer} .lbx tr.click:hover td{background:rgba(255,255,255,.03)}
+.lbback{font-size:11px;color:var(--green);cursor:pointer;margin:0 0 8px;display:inline-block}
+.delta{font-size:9px;margin-left:4px} .delta.up{color:var(--green)} .delta.dn{color:var(--red)}
+/* platform: WiGLE */
+.plat.wg::before{background:linear-gradient(90deg,var(--green),transparent 70%);box-shadow:0 0 14px var(--green)}
+.plat.wg{background:radial-gradient(700px 260px at 0 0,rgba(37,244,167,.08),transparent 70%),linear-gradient(180deg,#0b121b,#060a10)}
+.plat.wg .wglogo.plogo{width:52px;height:52px;font-size:26px}
+.plat.wg .bignum{color:var(--green);text-shadow:0 0 22px rgba(37,244,167,.4)}
+.plat.wg .rk.hot{border-color:var(--green);box-shadow:0 0 12px rgba(37,244,167,.25)} .plat.wg .rk.hot b{color:var(--green)}
+/* section nav */
+.secnav{position:sticky;top:0;z-index:40;display:flex;gap:6px;flex-wrap:wrap;padding:8px 0 10px;margin:-6px 0 12px;
+  background:linear-gradient(180deg,rgba(5,8,12,.94) 70%,rgba(5,8,12,0));backdrop-filter:blur(6px)}
+.secnav a{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);text-decoration:none;
+  border:1px solid var(--line);border-radius:20px;padding:5px 12px;background:#070c12;white-space:nowrap}
+.secnav a:hover{color:#dfe;border-color:var(--cyan-dim)}
+.secnav a.on{color:var(--cyan);border-color:var(--cyan);box-shadow:0 0 10px rgba(0,229,255,.2)}
+.card,.plats,.anchor{scroll-margin-top:58px}
+.anchor{grid-column:1/-1;height:0;margin-bottom:-14px}
+/* uploads */
+.uphead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.uphead .tabs{margin:0}
+.uphead .spacer{flex:1}
+.upsum{font-size:12px;color:var(--muted);margin-bottom:8px}
+.upsum b{color:#dfe}
+.upx{max-height:460px;overflow:auto}
+.upx table{width:100%;border-collapse:collapse;font-size:12px}
+.upx th{position:sticky;top:0;background:#0a1017;text-align:left;font-size:9px;letter-spacing:1px;color:var(--muted);
+  text-transform:uppercase;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+.upx td{padding:6px 8px;border-bottom:1px solid #0e1620;white-space:nowrap}
+.upx td.n{text-align:right;font-variant-numeric:tabular-nums;color:#eef}
+.upx td.n.g{color:var(--green);font-weight:700}
+.upx td.f{max-width:280px;overflow:hidden;text-overflow:ellipsis;color:#9fb0c0}
+.upx tr{cursor:pointer} .upx tr:hover td{background:rgba(255,255,255,.03)}
+.st{font-size:10px;letter-spacing:1px;text-transform:uppercase;border:1px solid var(--line);border-radius:10px;padding:1px 8px}
+.st.ok{color:var(--green);border-color:rgba(37,244,167,.4)} .st.wait{color:var(--amber);border-color:rgba(255,179,0,.4)}
+.st.bad{color:var(--red);border-color:rgba(255,77,94,.4)}
+.uptabs .tab.active.wg{color:var(--green);border-color:var(--green);background:rgba(37,244,167,.06)}
+.uptabs .tab.active.wd{color:var(--wd);border-color:var(--wd);background:rgba(255,226,0,.06)}
+.wg-tabs .tab.active{color:var(--green);border-color:var(--green);background:rgba(37,244,167,.06)}
+
 .lblogo{width:28px;height:28px;border-radius:50%;object-fit:contain;background:#000}
 .lbcard.wd .lblogo{border-radius:7px}
 .lbhead .lbme{margin-left:auto;font-size:11px;color:var(--muted);white-space:nowrap}
@@ -376,6 +480,12 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
 .sgroup .field label{color:#9fb0c0;font-weight:700;font-size:10px;letter-spacing:2px;text-transform:uppercase}
 .sgroup .field .hint a{color:var(--cyan)}
 .sgroup.wd .field .hint a{color:var(--wd)}
+.keygrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+@media(max-width:1000px){.keygrid{grid-template-columns:1fr}}
+.sgroup.wg{border-color:rgba(37,244,167,.28);background:radial-gradient(520px 170px at 0 0,rgba(37,244,167,.06),transparent 70%),rgba(4,8,12,.55)}
+.sgroup.wg .field .hint a{color:var(--green)}
+.sgroup.ws{border-color:rgba(255,107,61,.28);background:radial-gradient(520px 170px at 0 0,rgba(255,107,61,.06),transparent 70%),rgba(4,8,12,.55)}
+.sgroup.ws .field .hint a{color:#ff6b3d}
 .sgroup hr{border:0;border-top:1px dashed var(--line);margin:0}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media(max-width:700px){.two{grid-template-columns:1fr}}
@@ -384,8 +494,12 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
 .toggle:hover{border-color:var(--cyan-dim)}
 .toggle input{width:auto;margin:0}
 .toggle small{color:var(--muted);font-size:10px}
-.savebar{position:sticky;bottom:12px;z-index:5;display:flex;justify-content:flex-end;align-items:center;gap:12px;margin-top:14px;padding:10px 14px;border:1px solid var(--line);border-radius:12px;background:rgba(7,12,18,.92);backdrop-filter:blur(6px)}
-.savebar .hint{margin-right:auto}
+.sgh .cardsave{display:flex;align-items:center;gap:8px;margin-left:auto;flex:none}
+.sgh .sstat+.cardsave{margin-left:8px}
+.cardsave .msg{font-size:11px;white-space:nowrap}
+.cardsave .btn:disabled{opacity:.35;cursor:default;box-shadow:none}
+.sgroup.dirty .cardsave .btn{box-shadow:0 0 16px rgba(0,229,255,.45);animation:savepulse 1.6s ease-in-out infinite}
+@keyframes savepulse{50%{box-shadow:0 0 26px rgba(0,229,255,.7)}}
 .lbhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
 .lbhead h2{margin:0}
 .seg{display:flex;border:1px solid var(--line);border-radius:30px;overflow:hidden;background:#070c12}
@@ -440,7 +554,7 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
       <div class="logo"></div>
       <div>
         <h1>WARDRIVE UPLOADER</h1>
-        <div class="sub">WDGWARS + WARDRIFT // ADS-B // MESH</div>
+        <div class="sub">WIGLE + WDGWARS + WARDRIFT // WI-FI // BLUETOOTH // ADS-B // MESH</div>
       </div>
     </div>
     <div class="chips" id="pchips"></div>
@@ -454,17 +568,23 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
     <div class="hstat"><span>LINK</span><b id="link">…</b></div>
   </header>
   <div class="updbar" id="updbar" style="display:none"></div>
+  <nav class="secnav" id="secnav">
+    <a href="#sec-hw">Hardware</a><a href="#plats">Accounts</a><a href="#sec-live">Live</a>
+    <a href="#sec-boards">Leaderboards</a><a href="#card-uploads">Uploads</a><a href="#card-activity">Activity</a><a href="#card-settings">Settings</a>
+  </nav>
 
   <div class="grid">
     <!-- devices -->
-    <div class="card col-8">
+    <div class="card col-8" id="sec-hw">
       <h2>Hardware</h2>
       <div class="devs">
-        <div class="dev"><div class="dot" id="d-sdr"></div><div><div class="n">RTL-SDR</div><div class="d" id="d-sdr-t">scanning…</div></div></div>
-        <div class="dev"><div class="dot" id="d-pp"></div><div><div class="n">PortaPack</div><div class="d" id="d-pp-t">scanning…</div></div></div>
-        <div class="dev"><div class="dot" id="d-mesh"></div><div><div class="n" id="d-mesh-n">Mesh</div><div class="d" id="d-mesh-t">scanning…</div></div></div>
+        <div class="dev"><div class="dot" id="d-sdr"></div><div><div class="n">RTL-SDR</div><div class="d" id="d-sdr-t">scanning…</div></div><label class="hwsw" id="sw-sdr" title="Use for ADS-B" style="display:none"><input type="checkbox" data-cfg="adsb_enabled"><span></span></label></div>
+        <div class="dev"><div class="dot" id="d-pp"></div><div><div class="n">PortaPack</div><div class="d" id="d-pp-t">scanning…</div></div><label class="hwsw" id="sw-pp" title="Use for ADS-B" style="display:none"><input type="checkbox" data-cfg="adsb_enabled"><span></span></label></div>
+        <div class="dev"><div class="dot" id="d-mesh"></div><div><div class="n" id="d-mesh-n">Mesh</div><div class="d" id="d-mesh-t">scanning…</div></div><label class="hwsw" id="sw-mesh" title="Use mesh radios" style="display:none"><input type="checkbox" data-cfg="mesh_enabled"><span></span></label></div>
+        <div id="hw-dyn" style="display:contents"></div>
         <div class="dev"><div class="dot on"></div><div><div class="n">Uploader</div><div class="d" id="d-up">idle</div></div></div>
       </div>
+      <div class="hwnote" id="hw-note"></div>
       <div class="uploadbar">
         <button class="btn" id="btn-upload">▲ Upload now</button>
         <button class="btn ghost" id="btn-rescan">⟳ Rescan</button>
@@ -481,7 +601,7 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
     </div>
 
     <!-- counters: unique targets collected since the app started -->
-    <div class="card col-4" title="Big number = unique targets with a position collected since the app started. Below it: everything this PC has collected, and what is staged for the next upload. Your account totals are in the game cards.">
+    <div class="card col-4" id="card-collected" title="Big number = unique targets with a position collected since the app started. Below it: everything this PC has collected, and what is waiting for the next upload. Your account totals are in the game cards.">
       <h2>Collected since app start ↑</h2>
       <div class="counters">
         <div class="counter" id="c-air">
@@ -494,14 +614,23 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
           <div class="sess" id="t-mesh"></div>
           <div class="sess" id="s-mesh">0 queued</div><div class="sess" id="s-mesh-wd" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div><div class="burst" id="b-mesh"></div>
         </div>
+        <div class="counter wifi"><div class="num" id="n-wifi">0</div><div class="lbl">Wi-Fi</div>
+          <div class="sess" id="t-wifi"></div><div class="sess" id="s-wifi">0 queued</div><div class="burst" id="b-wifi"></div></div>
+        <div class="counter ble"><div class="num" id="n-ble">0</div><div class="lbl">Bluetooth</div>
+          <div class="sess" id="t-ble"></div><div class="sess" id="s-ble">0 queued</div><div class="burst" id="b-ble"></div></div>
+        <div class="counter hs clickable" data-keys="1" title="Click for every key wpa-sec has cracked for your account"><div class="num" id="n-hs">0</div><div class="lbl">Handshakes</div>
+          <div class="sess" id="t-hs"></div><div class="sess" id="s-hs"></div></div>
+        <div class="counter pmk clickable" data-keys="1" title="Click for every key wpa-sec has cracked for your account"><div class="num" id="n-pmk">0</div><div class="lbl">PMKIDs</div>
+          <div class="sess" id="t-pmk"></div><div class="sess" id="s-pmk"></div></div>
       </div>
     </div>
 
     <!-- games -->
     <section class="plats" id="plats" style="grid-column:span 12"></section>
 
+
     <!-- live feed: what's in view RIGHT NOW — one panel per source -->
-    <div class="card col-12">
+    <div class="card col-12" id="sec-live">
       <h2>Live incoming — unique captured</h2>
       <div class="feeds">
         <div>
@@ -517,9 +646,24 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
           <div class="feed" id="feed-mc"><div class="empty">no MeshCore nodes heard yet</div></div>
         </div>
       </div>
+      <div class="feeds2">
+        <div>
+          <div class="feedhdr" style="color:var(--green)">📶 WI-FI<span class="incount" id="wv-lc-wifi" style="color:var(--green)">0</span></div>
+          <div class="feed" id="wv-feed-wifi"><div class="empty">scanning…</div></div>
+        </div>
+        <div class="feedcol-div">
+          <div class="feedhdr" style="color:#8f74ff">ᛒ BLUETOOTH<span class="incount" id="wv-lc-ble" style="color:#8f74ff">0</span></div>
+          <div class="feed" id="wv-feed-ble"><div class="empty">scanning…</div></div>
+        </div>
+      </div>
+      <div id="wv-caps" style="display:none;margin-top:16px">
+        <div class="feedhdr" style="color:var(--amber)">🔑 HANDSHAKES AND PMKIDS<span class="hint" id="wv-caps-folder" style="font-weight:400"></span></div>
+        <div class="feed" id="wv-caps-feed"></div>
+      </div>
     </div>
 
     <!-- leaderboards -->
+    <div class="anchor" id="sec-boards"></div>
     <div class="card col-6 lbcard wdg" id="card-lb-wdg">
       <div class="lbhead"><img class="lblogo" src="/static/wdgwars.png" alt=""><h2>WDGWars leaderboards</h2><span class="lbme" id="lbme-wdg"></span></div>
       <div class="tabs wdg-tabs" id="lbt-wdg"></div>
@@ -529,6 +673,19 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
       <div class="lbhead"><img class="lblogo" src="/static/wardrift.svg" alt=""><h2>Wardrift leaderboards</h2><span class="lbme" id="lbme-wd"></span></div>
       <div class="tabs wd-tabs" id="lbt-wd"></div>
       <div class="lbx wd" id="lbb-wd"><div class="lbmsg">loading…</div></div>
+    </div>
+    <div class="card col-4 lbcard wg" id="card-lb-wg" style="display:none">
+      <div class="lbhead"><span class="wglogo">W</span><h2>WiGLE leaderboards</h2><span class="lbme" id="lbme-wg"></span></div>
+      <div class="tabs wg-tabs" id="lbt-wg"></div>
+      <div class="lbx wg" id="lbb-wg"><div class="lbmsg">loading…</div></div>
+    </div>
+
+    <!-- uploads -->
+    <div class="card col-12" id="card-uploads">
+      <div class="uphead"><h2 style="margin:0">Uploads</h2><div class="tabs uptabs" id="up-tabs"></div><span class="spacer"></span>
+        <button class="btn ghost sm" id="btn-up-refresh" type="button">⟳ Refresh</button></div>
+      <div class="upsum" id="up-sum"></div>
+      <div class="upx" id="up-box"><div class="lbmsg">loading…</div></div>
     </div>
 
     <!-- events -->
@@ -541,38 +698,62 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
     <div class="card col-12" id="card-settings">
       <h2>Settings</h2>
       <div class="sgrid">
-        <section class="sgroup wdg">
-          <div class="sgh"><img class="ic" src="/static/wdgwars.png" alt=""><div><b>WDGWars</b><span class="sub2">Upload key and stats</span></div><span class="sstat" id="sst-wdg"></span></div>
-          <div class="field">
-            <label for="f-key">API key</label>
-            <div class="row">
-              <input type="password" id="f-key" placeholder="paste key…" autocomplete="off">
-              <button class="btn ghost" id="btn-testkey" type="button">Test</button>
+        <section class="sgroup wide">
+          <div class="sgh"><span class="ic">🔑</span><div><b>Keys and accounts</b><span class="sub2">Every site this PC uploads to. Uploads go to every site with a key.</span></div></div>
+          <div class="keygrid">
+          <section class="sgroup wdg">
+            <div class="sgh"><img class="ic" src="/static/wdgwars.png" alt=""><div><b>WDGWars</b><span class="sub2">Upload key and stats</span></div><span class="sstat" id="sst-wdg"></span></div>
+            <div class="field">
+              <label for="f-key">API key</label>
+              <div class="row">
+                <input type="password" id="f-key" placeholder="paste key…" autocomplete="off">
+                <button class="btn ghost" id="btn-testkey" type="button">Test</button>
+              </div>
+              <span class="hint">The 64-character key from your WDGWars profile. <a href="https://wdgwars.pl/profile?gen=1#apikeys" target="_blank" rel="noopener">Get your key ↗</a></span>
+              <span class="msg" id="key-msg" style="margin-left:0"></span>
             </div>
-            <span class="hint">The 64-character key from your WDGWars profile. <a href="https://wdgwars.pl/profile?gen=1#apikeys" target="_blank" rel="noopener">Get your key ↗</a></span>
-            <span class="msg" id="key-msg" style="margin-left:0"></span>
-          </div>
-        </section>
-        <section class="sgroup wd">
-          <div class="sgh"><img class="ic" src="/static/wardrift.svg" alt=""><div><b>Wardrift</b><span class="sub2">Upload key and account</span></div><span class="sstat" id="sst-wd"></span></div>
-          <div class="field">
-            <label for="f-wdkey">Upload key</label>
-            <input type="password" id="f-wdkey" placeholder="optional — paste wdk_ key…" autocomplete="off">
-            <span class="hint">Sends your aircraft and mesh radios to Wardrift for XP and influence. <a href="https://wardrift.net" target="_blank" rel="noopener">wardrift.net ↗</a></span>
-          </div>
-          <hr>
-          <div class="field">
-            <label for="f-wd-user">Account sign-in (optional)</label>
-            <div class="acct" id="wd-acct"></div>
-            <span class="hint">Shows your character, rank and the leaderboards here. Your password goes to Wardrift once and is never saved.</span>
-            <span class="msg" id="wd-acct-msg" style="margin-left:0"></span>
+          </section>
+          <section class="sgroup wd">
+            <div class="sgh"><img class="ic" src="/static/wardrift.svg" alt=""><div><b>Wardrift</b><span class="sub2">Upload key and account</span></div><span class="sstat" id="sst-wd"></span></div>
+            <div class="field">
+              <label for="f-wdkey">Upload key</label>
+              <input type="password" id="f-wdkey" placeholder="optional — paste wdk_ key…" autocomplete="off">
+              <span class="hint">Sends your aircraft and mesh radios to Wardrift for XP and influence. <a href="https://wardrift.net" target="_blank" rel="noopener">wardrift.net ↗</a></span>
+            </div>
+            <hr>
+            <div class="field">
+              <label for="f-wd-user">Account sign-in (optional)</label>
+              <div class="acct" id="wd-acct"></div>
+              <span class="hint">Shows your character, rank and the leaderboards here. Your password goes to Wardrift once and is never saved.</span>
+              <span class="msg" id="wd-acct-msg" style="margin-left:0"></span>
+            </div>
+          </section>
+            <section class="sgroup wg">
+              <div class="sgh"><span class="ic" style="color:var(--green);font-weight:800">W</span><div><b>WiGLE</b><span class="sub2">Wi-Fi and Bluetooth</span></div><span class="sstat" id="sst-wigle"></span></div>
+              <div class="field">
+                <label for="f-wigle-name">API Name and Token</label>
+                <div class="row">
+                  <input type="text" id="f-wigle-name" placeholder="API Name (AID…)" autocomplete="off">
+                  <input type="password" id="f-wigle-token" placeholder="API Token" autocomplete="off">
+                  <button class="btn ghost" id="btn-wigle-test" type="button">Test</button>
+                </div>
+                <span class="hint">From wigle.net, Account, API. Checked with WiGLE before every upload. <a href="https://wigle.net/account" target="_blank" rel="noopener">Get your token ↗</a></span>
+                <span class="msg" id="wigle-msg" style="margin-left:0"></span>
+              </div>
+            </section>
+            <section class="sgroup ws">
+              <div class="sgh"><span class="ic">🔓</span><div><b>wpa-sec</b><span class="sub2">Handshakes and PMKIDs, cracked keys back</span></div><span class="sstat" id="sst-wpasec"></span></div>
+              <div class="field">
+                <label for="f-wpasec">Key</label>
+                <input type="password" id="f-wpasec" placeholder="optional — 32-character key" autocomplete="off">
+                <span class="hint">Each handshake and PMKID uploads seconds after it is captured. Click the Handshakes counter for every key your account has cracked. <a href="https://wpa-sec.stanev.org/?get_key" target="_blank" rel="noopener">Get a key ↗</a></span>
+              </div>
+            </section>
           </div>
         </section>
         <section class="sgroup">
-          <div class="sgh"><span class="ic">📡</span><div><b>Capture</b><span class="sub2">What this PC collects and how it starts</span></div></div>
+          <div class="sgh"><span class="ic">⚙</span><div><b>General</b><span class="sub2">Startup, names and feeds</span></div></div>
           <div class="toggles">
-            <label class="toggle"><input type="checkbox" id="f-adsb"> ✈ ADS-B <small>RTL-SDR or PortaPack</small></label>
-            <label class="toggle"><input type="checkbox" id="f-mesh"> ◆ Mesh <small>MeshCore and Meshtastic</small></label>
             <label class="toggle"><input type="checkbox" id="f-boot"> ⏻ Start with Windows</label>
           </div>
           <div class="field">
@@ -584,6 +765,14 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
             <label for="f-devlabel">Device name</label>
             <input type="text" id="f-devlabel" maxlength="24" autocomplete="off">
             <span class="hint">Goes in uploaded file names so each PC's uploads can be told apart.</span>
+          </div>
+          <div class="field">
+            <label for="f-gps-net-port">Phone GPS (GPS apps)</label>
+            <div class="row" style="align-items:center">
+              <span class="hint" style="white-space:nowrap">Send NMEA (TCP or UDP) to <b id="wv-ip" style="color:var(--cyan)">this PC</b> port</span>
+              <input type="number" id="f-gps-net-port" min="1024" max="65535" style="max-width:110px" placeholder="10110">
+            </div>
+            <span class="hint">For GPS apps that send NMEA. Without an app, click the Phone GPS tile in Hardware for a QR code.</span>
           </div>
         </section>
         <section class="sgroup">
@@ -640,11 +829,6 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
           <div class="sgh"><span class="ic">✓</span><div><b>Prerequisites</b><span class="sub2">One-time setup checks</span></div></div>
           <div class="checks" id="prereqs"><div class="empty">checking…</div></div>
         </section>
-      </div>
-      <div class="savebar">
-        <span class="hint">Keys and settings take effect when saved.</span>
-        <span class="msg" id="save-msg"></span>
-        <button class="btn" id="btn-save" type="button">Save settings</button>
       </div>
     </div>
   </div>
@@ -748,16 +932,28 @@ function render(s){
   } else if(mesh.present){ mtxt = anyConn?`${mesh.contacts||0} nodes`:'not responding'; }
   else { mtxt = 'not detected'; }
   $("#d-mesh-t").textContent = mtxt;
+  const cc=s.config||{};
+  // Only hardware that is plugged in is listed; unplugging a radio drops its tile.
+  $("#d-sdr").closest('.dev').style.display=sdr.present?'':'none';
+  $("#d-pp").closest('.dev').style.display=pp.present?'':'none';
+  hwSwitch("#sw-sdr", sdr.present, cc.adsb_enabled!==false);
+  hwSwitch("#sw-pp", pp.present, cc.adsb_enabled!==false);
+  hwSwitch("#sw-mesh", mesh.present||mdevs.length, cc.mesh_enabled!==false);
+  if(cc.adsb_enabled===false){
+    if(sdr.present){ setDot("#d-sdr",""); $("#d-sdr-t").textContent=sdr.label+" · off"; }
+    if(pp.present){ setDot("#d-pp",""); $("#d-pp-t").textContent=pp.port+" · off"; }
+  }
+  if(cc.mesh_enabled===false && (mesh.present||mdevs.length)){ setDot("#d-mesh",""); $("#d-mesh-t").textContent="off"; }
   $("#d-up").textContent = s.upload_in_progress ? "UPLOADING…" : "idle";
 
   // Big number = unique targets collected since the app started (includes the queued).
   const col=s.collected||{}, newA=col.aircraft||0, newM=col.mesh||0;
-  $("#t-air").textContent = (col.aircraft_all||0).toLocaleString()+" all time on this PC";
-  $("#t-mesh").textContent = (col.mesh_all||0).toLocaleString()+" all time on this PC";
+  $("#t-air").textContent = (col.aircraft_all||0).toLocaleString()+" total";
+  $("#t-mesh").textContent = (col.mesh_all||0).toLocaleString()+" total";
   animateNum($("#n-air"), newA);
   animateNum($("#n-mesh"), newM);
-  $("#s-air").textContent = (s.pending.aircraft||0)+" staged to send";
-  $("#s-mesh").textContent = (s.pending.mesh||0)+" staged to send";
+  $("#s-air").textContent = (s.pending.aircraft||0)+" to send";
+  $("#s-mesh").textContent = (s.pending.mesh||0)+" to send";
   // Last Wardrift mesh result (nodes + local radio telemetry), when a key is set.
   const wdm=(s.last_cycle||{}).wardrift_mesh;
   const wdmTxt=((s.config||{}).has_wardrift_key && wdm && wdm!=="skipped") ? "Wardrift: "+wdm : "";
@@ -790,15 +986,18 @@ function render(s){
   renderPlatforms(s);
   renderPrereqs(s.prereqs);
   renderLB(s);
+  renderUploads(s);
   renderWdAccount(s);
   renderSettingStatus(s);
+  renderWardrive(s);
+  fillWardriveSettings(s);
   renderUpdate(s.update||{});
   renderEvents(s.events);
   // settings (only fill when not being edited)
   const c=s.config||{};
   fillIfIdle("#f-adsburl", c.adsb_json_url||"");
   fillIfIdle("#f-devlabel", c.upload_device_label||""); $("#f-devlabel").placeholder = c.upload_device_default||"";
-  fillChk("#f-adsb", c.adsb_enabled); fillChk("#f-mesh", c.mesh_enabled); fillChk("#f-boot", c.start_on_boot);
+  fillChk("#f-boot", c.start_on_boot);
   fillIfIdle("#f-advert", c.mesh_advert_minutes);
   fillIfIdle("#f-hops", c.mesh_hop_limit);
   if(!window._devsInit){ renderMeshDevs(c.mesh_devices||[]); window._devsInit=true; }
@@ -807,8 +1006,11 @@ function render(s){
   if(document.activeElement!==$("#f-wdkey")) $("#f-wdkey").placeholder = c.has_wardrift_key ? "•••••••• key set — type to change" : "optional — paste wdk_ key…";
 }
 
-function fillIfIdle(sel,val){const el=$(sel); if(document.activeElement!==el) el.value=val;}
-function fillChk(sel,val){const el=$(sel); if(document.activeElement!==el) el.checked=!!val;}
+// A field the user has changed keeps their value until it is saved.
+function fillIfIdle(sel,val){const el=$(sel); if(el && document.activeElement!==el && !el.dataset.dirty) el.value=val;}
+function fillChk(sel,val){const el=$(sel); if(el && document.activeElement!==el && !el.dataset.dirty) el.checked=!!val;}
+['input','change'].forEach(ev=>document.addEventListener(ev,e=>{ if(e.target.closest&&e.target.closest('#card-settings')) e.target.dataset.dirty='1'; }));
+function clearDirty(){ document.querySelectorAll('#card-settings [data-dirty]').forEach(el=>delete el.dataset.dirty); }
 
 let lastAir=new Set(), lastMesh=new Set();
 function feedSig(items,isAir){
@@ -924,10 +1126,42 @@ $("#btn-testkey").onclick=async()=>{
   if(r.ok){m.textContent="✓ valid — "+r.username;m.className="msg ok";}
   else{m.textContent="✗ "+(r.error||"invalid");m.className="msg err";}
 };
-$("#btn-save").onclick=async()=>{
+// Collapse / expand any card from its header; remembered per card.
+(()=>{
+  let shut=[]; try{ shut=JSON.parse(localStorage.getItem('collapsed')||'[]'); }catch(e){}
+  const keep=()=>{ try{ localStorage.setItem('collapsed',JSON.stringify(shut)); }catch(e){} };
+  document.querySelectorAll('.grid>.card[id]').forEach(card=>{
+    const head=[...card.children].find(el=>el.tagName==='H2'||el.classList.contains('lbhead')||el.classList.contains('uphead'));
+    if(!head) return;
+    head.classList.add('chead');
+    const b=document.createElement('button'); b.type='button'; b.className='cbtn'; b.title='Collapse or expand'; b.textContent='▼';
+    head.appendChild(b);
+    const set=c=>{ card.classList.toggle('collapsed',c); shut=shut.filter(x=>x!==card.id); if(c) shut.push(card.id); keep(); };
+    if(shut.includes(card.id)) card.classList.add('collapsed');
+    b.onclick=e=>{ e.stopPropagation(); set(!card.classList.contains('collapsed')); };
+    const title=head.tagName==='H2'?head:head.querySelector('h2');
+    if(title) title.addEventListener('click',e=>{ if(e.target===title||head.tagName==='H2'&&!e.target.closest('button,a,input,select,.tab')) set(!card.classList.contains('collapsed')); });
+  });
+})();
+
+// Every settings card has its own Save. It lights up once something in that card
+// changes, and Enter in one of its fields saves too.
+const SAVE_CARDS=[...document.querySelectorAll('#card-settings section.sgroup')].filter(s=>
+  !s.querySelector('section.sgroup') && !s.querySelector('#pos-radios,#prereqs,#upd-ver') && s.querySelector('input,select'));
+SAVE_CARDS.forEach(sec=>{
+  const w=document.createElement('div'); w.className='cardsave';
+  w.innerHTML='<span class="msg"></span><button class="btn sm" type="button" disabled>Save</button>';
+  sec.querySelector('.sgh').appendChild(w);
+  w.querySelector('button').onclick=()=>saveSettings(w.querySelector('.msg'));
+});
+const _cardOf=el=>{ if(!el||!el.closest||el.closest('#wd-acct')) return null; const s=el.closest('section.sgroup'); return SAVE_CARDS.includes(s)?s:null; };
+['input','change'].forEach(ev=>document.addEventListener(ev,e=>{ const s=_cardOf(e.target); if(!s) return;
+  s.classList.add('dirty'); s.querySelector('.cardsave button').disabled=false; s.querySelector('.cardsave .msg').textContent=''; }));
+document.addEventListener('keydown',e=>{ if(e.key!=='Enter'||e.target.tagName!=='INPUT') return; const s=_cardOf(e.target); if(!s) return;
+  e.preventDefault(); saveSettings(s.querySelector('.cardsave .msg')); });
+async function saveSettings(m){
   const cfg={
     interval_hours:+$("#interval").value,
-    adsb_enabled:$("#f-adsb").checked, mesh_enabled:$("#f-mesh").checked,
     adsb_json_url:$("#f-adsburl").value.trim(),
     upload_device_label:$("#f-devlabel").value.replace(/[^A-Za-z0-9]/g,"").slice(0,24),
     mesh_devices:collectMeshDevs(),
@@ -937,12 +1171,18 @@ $("#btn-save").onclick=async()=>{
   };
   const key=$("#f-key").value.trim(); if(key) cfg.api_key=key;
   const wdk=$("#f-wdkey").value.trim(); if(wdk) cfg.wardrift_api_key=wdk;
-  const m=$("#save-msg"); m.textContent="saving…"; m.className="msg";
+  const wps=$("#f-wpasec").value.trim(); if(wps) cfg.wpasec_key=wps;
+  cfg.gps_net_port=Math.min(65535,Math.max(1024,parseInt($("#f-gps-net-port").value)||10110));
+  cfg.wigle_api_name=$("#f-wigle-name").value.trim();
+  const wgt=$("#f-wigle-token").value.trim(); if(wgt) cfg.wigle_api_token=wgt;
+  m.textContent="saving…"; m.className="msg";
   const r=await api("/api/config","POST",cfg);
-  if(r.ok){m.textContent="✓ saved";m.className="msg ok";dirtyKey=false;$("#f-key").value="";$("#f-wdkey").value="";toast("Settings saved");
+  if(r.ok){m.textContent="✓ saved";m.className="msg ok";dirtyKey=false;clearDirty();
+    SAVE_CARDS.forEach(s=>{ s.classList.remove('dirty'); s.querySelector('.cardsave button').disabled=true; });
+    setTimeout(()=>{ if(m.textContent==="✓ saved") m.textContent=""; },4000);$("#f-key").value="";$("#f-wdkey").value="";$("#f-wigle-token").value="";$("#f-wpasec").value="";toast("Settings saved");
     await api("/api/refresh-stats","POST"); poll();}
   else{m.textContent="✗ "+(r.error||"error");m.className="msg err";}
-};
+}
 // ---- detail modals ----
 function closeModal(){ $("#modal").classList.remove('show'); }
 function openModal(html, mag){
@@ -1306,22 +1546,82 @@ function wdCard(s){
     </div>${wdReceipt(s)}</div>`;
 }
 
+const deltaHTML=(now,prev)=>{ if(!now||!prev||now===prev) return ''; const d=prev-now;
+  return `<span class="delta ${d>0?'up':'dn'}">${d>0?'▲':'▼'}${fmt(Math.abs(d))}</span>`; };
+function wgRace(w){
+  const out=[];
+  for(const [rows,my,lbl,val] of [[w.race,w.rank,'All-time',r=>r.wifi_gps],[w.race_month,w.month_rank,'This month',r=>r.month]]){
+    if(!my){ out.push(`<div class="rl"><span>${lbl}</span><b>not ranked yet</b></div>`); continue; }
+    const list=rows||[], me=list.find(r=>r.rank===my), above=list.find(r=>r.rank===my-1), below=list.find(r=>r.rank===my+1);
+    const mine=me?val(me):(lbl==='All-time'?w.wifi_gps:w.month);
+    if(my===1){ const lead=mine-(below?val(below):0);
+      out.push(`<div><div class="rl"><span>${lbl} · #1</span><b class="up">leading by ${compact(lead)}</b></div>${meterHTML([{k:'You',v:1,color:'#25f4a7'}])}</div>`); continue; }
+    if(!above){ out.push(`<div class="rl"><span>${lbl} · #${fmt(my)}</span><b>—</b></div>`); continue; }
+    const need=Math.max(1,val(above)-mine+1);
+    out.push(`<div><div class="rl"><span>${lbl} · #${fmt(my)} → #${fmt(my-1)} ${escHtml(above.name)}</span><b>${compact(need)} to pass</b></div>
+      ${meterHTML([{k:'You',v:mine,color:'#25f4a7'},{k:'To pass',v:need,color:'#0e1620'}])}
+      ${below?`<div class="rl" style="margin-top:4px"><span>#${fmt(my+1)} ${escHtml(below.name)} behind you</span><b class="up">${compact(Math.max(0,mine-val(below)))} ahead</b></div>`:''}</div>`);
+  }
+  if(w.prev_month_rank) out.push(`<div class="rl"><span>Last month you finished</span><b>#${fmt(w.prev_month_rank)}</b></div>`);
+  return out.join('');
+}
+function wgRecent(w){
+  const rows=w.recent||[];
+  if(!rows.length) return '<div class="hint">No WiGLE uploads yet. They show up here with what each one earned.</div>';
+  return `<div class="uprow">${rows.map(u=>`<span class="t">${upWhen(u.date)}</span><span class="id">${escHtml(u.id)}</span>`+
+    (u.done?`<b>+${fmt(u.new_wifi)} Wi-Fi</b><i>+${fmt(u.new_bt)} BT</i>`:`<b style="color:var(--amber)">${u.percent>=0?u.percent+'%':'queued'}</b><i></i>`)).join('')}</div>
+    <div class="hint" style="margin-top:8px"><a href="#card-uploads" style="color:var(--green)">All uploads ↓</a></div>`;
+}
+function wgCard(s){
+  const w=s.wigle||{}, c=s.config||{};
+  const head=(name,sub,ranks)=>`<div class="ph"><span class="wglogo plogo">W</span>
+      <div class="who"><div class="plat-name">WIGLE</div><div class="uname">${name}</div><div class="usub">${sub}</div></div>
+      <div class="ranks">${ranks||''}</div></div>`;
+  if(!c.has_wigle) return `<div class="plat wg">${head('WiGLE','not set up yet')}
+      <div class="cta fill"><b>Add your WiGLE key</b><span>Wi-Fi and Bluetooth from this PC upload to WiGLE, and your rank shows here.</span>
+        <button class="btn sm" type="button" onclick="gotoSetting('#f-wigle-name')">Add WiGLE key</button></div></div>`;
+  if(!w.ok) return `<div class="plat wg">${head('WiGLE', w.error?escHtml(w.error):'loading your stats')}</div>`;
+  const segs=[{k:'Wi-Fi',v:w.wifi_gps,color:'#25f4a7'},{k:'Bluetooth',v:w.bt,color:'#7c5cff'},{k:'Cell',v:w.cell,color:'#ffb300'}];
+  const md=(w.month||0)-(w.prev_month||0);
+  const days=Object.entries(s.wigle_days||{}).sort((a,b)=>a[0]<b[0]?-1:1);
+  const g=[]; for(let i=1;i<days.length;i++) g.push({t:days[i][0], v:Math.max(0,(days[i][1].wifi_gps||0)-(days[i-1][1].wifi_gps||0))});
+  g.splice(0,Math.max(0,g.length-14));
+  return `<div class="plat wg">${head(escHtml(w.name||'WiGLE'), `uploading since ${escHtml(w.first||'—')} · last ${escHtml(w.last||'—')}`,
+      rankChip(w.rank,'All-time','all-time rank on WiGLE')+rankChip(w.month_rank,'This month','rank this month')+rankChip(w.prev_month_rank,'Last month','rank last month'))}
+    <div class="pbody">
+      <div><div class="hero"><div class="viz">${donutSVG(segs,compact(w.wifi_gps),'WI-FI GPS')}</div>
+        <div class="nums"><div class="bignum">${counter('wg-wifi',w.wifi_gps)}</div><div class="biglbl">Wi-Fi with GPS</div>
+          <div class="gain"><span><b>+${fmt(w.month)}</b> this month</span><span>${fmt(w.prev_month)} last month</span></div></div></div>
+        ${legendHTML(segs)}</div>
+      <div class="panel"><h3>Standing <em>${w.rank?'#'+fmt(w.rank)+' all-time':''}${deltaHTML(w.rank,w.prev_rank)}</em></h3>
+        <div class="tiles">${tile((+w.wifi_pct||0).toFixed(2)+'%','Of all WiGLE')}${tile(compact(w.wifi),'Wi-Fi total')}${tile(compact(w.locations),'Locations')}
+          ${tile(compact(w.bt_all||w.bt),'BT total')}${tile(compact(w.cell_all||w.cell),'Cell total')}${tile((md>=0?'+':'')+compact(md),'Vs last month')}</div>
+        <h3 style="margin-top:12px">Daily gains <em>${g.length?g.length+' day'+(g.length>1?'s':''):''}</em></h3>
+        <div class="sparkbox" style="height:54px">${g.length?barsSVG(g,{color:'#25f4a7'}):'<div class="note">Builds up as the uploader runs each day</div>'}</div></div>
+      <div class="panel wide2"><h3>Next target <em>climb the boards</em></h3><div class="race">${wgRace(w)}</div></div>
+      <div class="panel wideall grow"><h3>Recent uploads <em>what WiGLE credited</em></h3>${wgRecent(w)}</div>
+    </div></div>`;
+}
+
 let _platSig='';
 function renderPlatforms(s){
   const c=s.config||{}, st=s.stats||{}, wd=s.wardrift||{};
-  const wdgOn=!!c.has_api_key, wdOn=!!(c.has_wardrift_key||c.has_wardrift_session);
-  const sig=JSON.stringify([wdgOn,wdOn,st,s.wdgwars_days,s.leaderboard_ts,wd,c.has_wardrift_key,c.wardrift_username]);
+  const wdgOn=!!c.has_api_key, wdOn=!!(c.has_wardrift_key||c.has_wardrift_session), wgOn=!!c.has_wigle;
+  const sig=JSON.stringify([wdgOn,wdOn,wgOn,st,s.wdgwars_days,s.leaderboard_ts,wd,c.has_wardrift_key,c.wardrift_username,s.wigle,s.wigle_days]);
   // header chips
   const ch=(wd.account||{}).character||{};
   $("#pchips").innerHTML=
     `<div class="pchip${wdgOn?'':' off'}" data-go="${wdgOn?'#plats':'#f-key'}"><img src="/static/wdgwars.png" alt=""><span class="dot ${wdgOn?(st.username?'on':'warn'):''}"></span><span>WDGWARS <b>${wdgOn?escHtml(st.username||'…'):'add key'}</b></span></div>`+
-    `<div class="pchip${wdOn?'':' off'}" data-go="${wdOn?'#plats':'#f-wdkey'}"><img src="/static/wardrift.svg" alt=""><span class="dot ${wdOn?((wd.session==='ok'||c.has_wardrift_key)?'on':'warn'):''}"></span><span>WARDRIFT <b>${wdOn?escHtml(ch.name||(c.has_wardrift_key?'uploading':'signed in')):'add key'}</b></span></div>`;
+    `<div class="pchip${wdOn?'':' off'}" data-go="${wdOn?'#plats':'#f-wdkey'}"><img src="/static/wardrift.svg" alt=""><span class="dot ${wdOn?((wd.session==='ok'||c.has_wardrift_key)?'on':'warn'):''}"></span><span>WARDRIFT <b>${wdOn?escHtml(ch.name||(c.has_wardrift_key?'uploading':'signed in')):'add key'}</b></span></div>`+
+    `<div class="pchip${wgOn?'':' off'}" data-go="${wgOn?'#plats':'#f-wigle-name'}"><span class="wglogo" style="width:26px;height:26px;font-size:13px;border-width:1px">W</span><span class="dot ${wgOn?((s.wigle||{}).ok?'on':'warn'):''}"></span><span>WIGLE <b>${wgOn?escHtml((s.wigle||{}).name||'…'):'add key'}</b></span></div>`;
   if(sig===_platSig) return; _platSig=sig;
   const box=$("#plats");
-  if(!wdgOn && !wdOn){
+  if(!wdgOn && !wdOn && !wgOn){
     box.innerHTML=`<div class="plat wdg" style="grid-column:1/-1"><div class="ph"><div class="who"><div class="plat-name">GET STARTED</div><div class="uname">Connect a game</div>
       <div class="usub">Pick one or both. Aircraft and mesh nodes upload to every game you add.</div></div></div>
       <div class="connect">
+        <div class="cta"><span class="wglogo" style="width:44px;height:44px;font-size:22px">W</span><b>WiGLE</b><span>Paste your WiGLE API Name and Token to upload Wi-Fi and Bluetooth and see your rank.</span>
+          <button class="btn sm" type="button" onclick="gotoSetting('#f-wigle-name')">Add WiGLE key</button></div>
         <div class="cta"><img src="/static/wdgwars.png" alt=""><b>WDGWars</b><span>Paste your WDGWars API key to start uploading and see your stats and the leaderboards.</span>
           <button class="btn sm" type="button" onclick="gotoSetting('#f-key')">Add WDGWars key</button></div>
         <div class="cta"><img src="/static/wardrift.svg" alt="" style="border-radius:10px"><b>Wardrift</b><span>Paste a Wardrift upload key to earn XP and influence for every aircraft and mesh radio.</span>
@@ -1329,7 +1629,7 @@ function renderPlatforms(s){
       </div></div>`;
     return;
   }
-  box.innerHTML=(wdgOn?wdgCard(s):'')+(wdOn?wdCard(s):'');
+  box.innerHTML=(wgOn?wgCard(s):'')+(wdgOn?wdgCard(s):'')+(wdOn?wdCard(s):'');
   runCounts(box);
 }
 document.addEventListener('click',e=>{ const c=e.target.closest('.pchip[data-go]'); if(c) gotoSetting(c.dataset.go); });
@@ -1348,12 +1648,12 @@ function fillBoard(p, tabs, cur, html, sig){
 }
 function renderLB(s){
   const c=s.config||{}, st=s.stats||{}, wd=s.wardrift||{}, lb=s.leaderboard||{};
-  const wdgShow=!!c.has_api_key, wdShow=!!(c.has_wardrift_key||c.has_wardrift_session);
-  const both=wdgShow&&wdShow;
-  const cw=$('#card-lb-wdg'), cd=$('#card-lb-wd');
-  cw.style.display=(wdgShow||!wdShow)?'':'none'; cd.style.display=wdShow?'':'none';
-  cw.classList.toggle('col-6',both); cw.classList.toggle('col-12',!both);
-  cd.classList.toggle('col-6',both); cd.classList.toggle('col-12',!both);
+  const wdgShow=!!c.has_api_key, wdShow=!!(c.has_wardrift_key||c.has_wardrift_session), wgShow=!!c.has_wigle;
+  const cw=$('#card-lb-wdg'), cd=$('#card-lb-wd'), cg=$('#card-lb-wg');
+  const shown=[[cg,wgShow],[cw,wdgShow||(!wdShow&&!wgShow)],[cd,wdShow]];
+  const span=12/Math.max(1,shown.filter(x=>x[1]).length);
+  for(const [el,on] of shown){ el.style.display=on?'':'none'; ['col-4','col-6','col-12'].forEach(k=>el.classList.toggle(k,k==='col-'+span)); }
+  if(wgShow) renderWgBoard(s);
   // WDGWars
   const r=st.your_rank||{};
   $('#lbme-wdg').innerHTML=st.username&&r[LB.wdg]?`you <b>#${r[LB.wdg]}</b>`:'';
@@ -1412,6 +1712,177 @@ function wdRows(d,wd){
   const pin=(!rows.some(isMe)&&me.character_id)?`<tr class="gap"><td colspan="5">⋯</td></tr>`+line(me,'me pin'):'';
   return `<table><tr><th class="r">#</th><th>Character</th><th>Share</th><th>Trend</th><th style="text-align:right">Influence</th></tr>${body}${pin}</table>`;
 }
+const WG_TABS=[['alltime','All-time'],['month','This month'],['teams','Teams']];
+LB.wg='alltime'; LB.wgTeam=null; LB.wgCache={}; _lbSig.wg='';
+async function loadWg(key,url){
+  const c=LB.wgCache[key];
+  if(LB.loading['wg:'+key] || (c && !c.error && Date.now()/1000-(c.fetched||0)<300)) return;
+  LB.loading['wg:'+key]=true;
+  try{ LB.wgCache[key]=await api(url); } catch(e){ LB.wgCache[key]={error:'offline'}; }
+  LB.loading['wg:'+key]=false;
+  if(window._lastState) renderLB(window._lastState);
+}
+function renderWgBoard(s){
+  const me=s.wigle||{};
+  const key=LB.wgTeam?'team:'+LB.wgTeam.id:LB.wg;
+  const url=LB.wgTeam?`/api/wigle/board?kind=team&id=${encodeURIComponent(LB.wgTeam.id)}`:`/api/wigle/board?kind=${LB.wg}`;
+  const d=LB.wgCache[key];
+  if(!d) loadWg(key,url);
+  const rk=LB.wg==='month'?me.month_rank:me.rank;
+  $('#lbme-wg').innerHTML=!LB.wgTeam&&LB.wg!=='teams'&&rk?`you <b>#${fmt(rk)}</b>`:'';
+  let html;
+  if(!d) html='<div class="lbmsg">loading…</div>';
+  else if(d.error||d.ok===false) html=`<div class="lbmsg">Could not load this board: ${escHtml(d.error||'unknown error')}</div>`;
+  else if(LB.wgTeam) html=wgTeamRows(d,me);
+  else if(LB.wg==='teams') html=wgTeamsRows(d);
+  else html=wgUserRows(d,me);
+  fillBoard('wg',WG_TABS,LB.wgTeam?'teams':LB.wg,html,JSON.stringify([key,(d||{}).fetched,me.name,me.rank]));
+}
+function wgUserRows(d,me){
+  const rows=d.users||[], month=LB.wg==='month';
+  if(!rows.length) return '<div class="lbmsg">No one on this board yet.</div>';
+  const val=r=>month?r.month:r.wifi_gps, max=Math.max(1,...rows.map(val));
+  const isMe=r=>r.self||(me.name&&r.name.toLowerCase()===me.name.toLowerCase());
+  const body=rows.map(r=>`<tr class="${isMe(r)?'me':''}"><td class="r">${medal(r.rank)}</td>
+      <td class="nm">${escHtml(r.name)}${month?'':deltaHTML(r.rank,r.prev_rank)}<small>${(+r.wifi_pct||0).toFixed(2)}% of WiGLE · since ${escHtml((r.first||'').slice(0,4))}</small></td>
+      <td class="bar"><div class="meter"><div style="width:${(100*val(r)/max).toFixed(1)}%;background:linear-gradient(90deg,#0f7a55,var(--green));box-shadow:0 0 8px rgba(37,244,167,.4)"></div></div></td>
+      <td class="v">${fmt(val(r))}</td></tr>`).join('');
+  const myRank=month?me.month_rank:me.rank;
+  const pin=(!rows.some(isMe)&&me.name&&myRank)?`<tr class="gap"><td colspan="4">⋯</td></tr><tr class="me pin"><td class="r">${medal(myRank)}</td><td class="nm">${escHtml(me.name)}<small>you</small></td><td class="bar"></td><td class="v">${fmt(month?me.month:me.wifi_gps)}</td></tr>`:'';
+  return `<table><tr><th class="r">#</th><th>Wardriver</th><th></th><th style="text-align:right">${month?'This month':'Wi-Fi GPS'}</th></tr>${body}${pin}</table>`;
+}
+function wgTeamsRows(d){
+  const rows=d.groups||[];
+  if(!rows.length) return '<div class="lbmsg">No teams.</div>';
+  const max=Math.max(1,...rows.slice(0,100).map(r=>r.discovered));
+  return `<table><tr><th class="r">#</th><th>Team</th><th></th><th style="text-align:right">Wi-Fi GPS</th></tr>${rows.slice(0,100).map((r,i)=>
+    `<tr class="click" data-team="${escHtml(r.id)}" data-tname="${escHtml(r.name)}"><td class="r">${medal(i+1)}</td>
+      <td class="nm">${escHtml(r.name)}<small>${fmt(r.members)} members · ${escHtml(r.owner)}</small></td>
+      <td class="bar"><div class="meter"><div style="width:${(100*r.discovered/max).toFixed(1)}%;background:linear-gradient(90deg,#0f7a55,var(--green))"></div></div></td>
+      <td class="v">${compact(r.discovered)}</td></tr>`).join('')}</table>`;
+}
+function wgTeamRows(d,me){
+  const rows=d.members||[];
+  const back=`<span class="lbback" data-back="1">← All teams</span> <b style="color:#dfe">${escHtml(d.group||LB.wgTeam.name)}</b> <span class="hint">${fmt(rows.length)} members</span>`;
+  if(!rows.length) return back+'<div class="lbmsg">No members.</div>';
+  const max=Math.max(1,rows[0].discovered);
+  return back+`<table><tr><th class="r">#</th><th>Member</th><th></th><th style="text-align:right">Wi-Fi GPS</th></tr>${rows.map(r=>
+    `<tr class="${r.self?'me':''}"><td class="r">${medal(r.rank)}</td><td class="nm">${escHtml(r.name)}<small>+${fmt(r.month)} this month · last ${escHtml(r.last||'—')}</small></td>
+      <td class="bar"><div class="meter"><div style="width:${(100*r.discovered/max).toFixed(1)}%;background:linear-gradient(90deg,#0f7a55,var(--green))"></div></div></td>
+      <td class="v">${compact(r.discovered)}</td></tr>`).join('')}</table>`;
+}
+$("#lbt-wg").addEventListener('click',e=>{ const t=e.target.closest('[data-t]'); if(!t) return;
+  LB.wg=t.dataset.t; LB.wgTeam=null; if(window._lastState) renderLB(window._lastState); });
+$("#lbb-wg").addEventListener('click',e=>{
+  if(e.target.closest('[data-back]')){ LB.wgTeam=null; LB.wg='teams'; if(window._lastState) renderLB(window._lastState); return; }
+  const tr=e.target.closest('tr[data-team]'); if(!tr) return;
+  LB.wgTeam={id:tr.dataset.team,name:tr.dataset.tname}; if(window._lastState) renderLB(window._lastState); });
+
+// ---- uploads ----
+const UP={src:null, cache:{}, loading:{}, sig:''};
+const upWhen=t=>{ if(!t) return '—'; const d=typeof t==='number'?new Date(t*1000):new Date(String(t).replace(' ','T'));
+  return isNaN(d)?escHtml(String(t)):d.toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); };
+const fmtBytes=b=>!b?'':b>1048576?(b/1048576).toFixed(1)+' MB':b>1024?Math.round(b/1024)+' KB':b+' B';
+async function loadUploads(src,force){
+  if(UP.loading[src]) return;
+  const c=UP.cache[src];
+  if(!force && c && Date.now()-c._at<60000) return;
+  UP.loading[src]=true;
+  try{ UP.cache[src]={...(await api('/api/uploads?src='+src)),_at:Date.now()}; }
+  catch(e){ UP.cache[src]={ok:false,error:'offline',list:[],_at:Date.now()}; }
+  UP.loading[src]=false; UP.sig='';
+  if(window._lastState) renderUploads(window._lastState);
+}
+function wdgRowInfo(o){
+  const r=o.result||{}, g=k=>(r[k]!=null?r[k]:o[k]);
+  const ep=String(o.endpoint||''), fmtx=String(g('format')||'');
+  const kind=(g('aircraft_imported')!=null||g('unique_icaos')!=null||/dump1090|adsb|aircraft/i.test(fmtx+ep))?'Aircraft'
+    :(g('meshcore_imported')!=null||g('meshtastic_imported')!=null||/mesh/i.test(ep))?'Mesh':'Wi-Fi + BT';
+  return {r,g,kind};
+}
+function renderUploads(s){
+  const c=s.config||{};
+  const srcs=[['wigle','WiGLE',c.has_wigle,'wg'],['wdgwars','WDGWars',c.has_api_key,''],['wardrift','Wardrift',c.has_wardrift_key,'wd']].filter(x=>x[2]);
+  const card=$('#card-uploads'); card.style.display=srcs.length?'':'none';
+  if(!srcs.length) return;
+  if(!UP.src||!srcs.some(x=>x[0]===UP.src)) UP.src=srcs[0][0];
+  const tabsHtml=srcs.map(([k,l,,cls])=>`<div class="tab ${cls}${k===UP.src?' active':''}" data-src="${k}">${l}</div>`).join('');
+  if($('#up-tabs').innerHTML!==tabsHtml) $('#up-tabs').innerHTML=tabsHtml;
+  const lastCycle=(s.last_cycle||{}).ts||0;
+  if(UP.cycle!==lastCycle){ UP.cycle=lastCycle; UP.cache={}; }
+  const d=UP.cache[UP.src];
+  if(!d){ loadUploads(UP.src); }
+  const sig=JSON.stringify([UP.src,d&&d._at]);
+  if(sig===UP.sig) return; UP.sig=sig;
+  const box=$('#up-box'), sum=$('#up-sum');
+  if(!d){ box.innerHTML='<div class="lbmsg">loading…</div>'; sum.textContent=''; return; }
+  if(d.ok===false){ box.innerHTML=`<div class="lbmsg">${escHtml(d.error||'Could not load uploads')}</div>`; sum.textContent=''; return; }
+  const list=d.list||[];
+  UP.rows=list;
+  if(UP.src==='wigle'){
+    const cw=list.reduce((a,u)=>a+u.new_wifi,0), cb=list.reduce((a,u)=>a+u.new_bt,0), cc=list.reduce((a,u)=>a+u.new_cell,0);
+    sum.innerHTML=`${fmt(list.length)} uploads, newest first · WiGLE credited <b>${fmt(cw)}</b> new Wi-Fi, <b>${fmt(cb)}</b> Bluetooth, <b>${fmt(cc)}</b> cell`
+      +(d.queue>0?` · WiGLE's processing queue: <b>${fmt(d.queue)}</b> files`:'');
+    box.innerHTML=list.length?`<table><tr><th>When</th><th>Transaction</th><th>Status</th><th style="text-align:right">New Wi-Fi</th><th style="text-align:right">New BT</th><th style="text-align:right">New cell</th><th style="text-align:right">Wi-Fi in file</th><th style="text-align:right">Size</th></tr>${
+      list.map((u,i)=>`<tr data-i="${i}"><td>${upWhen(u.date)}</td><td class="f" title="${escHtml(u.file)}">${escHtml(u.id||u.file)}</td>
+        <td>${u.done?'<span class="st ok">done</span>':`<span class="st wait">${u.percent>=0?u.percent+'%':escHtml(u.status||'queued')}</span>`}</td>
+        <td class="n g">${u.done?fmt(u.new_wifi):'…'}</td><td class="n">${u.done?fmt(u.new_bt):'…'}</td><td class="n">${u.done?fmt(u.new_cell):'…'}</td>
+        <td class="n">${fmt(u.total_wifi)}</td><td class="n">${fmtBytes(u.bytes)}</td></tr>`).join('')}</table>`
+      :'<div class="lbmsg">No uploads yet. Your next WiGLE upload shows up here.</div>';
+  } else if(UP.src==='wdgwars'){
+    const old=Date.now()-14*86400000;
+    const rows=list.map((o,i)=>({o,i})).filter(({o})=>!(/fail|cancel/i.test(o.status||'') && new Date(String(o.created_at||'').replace(' ','T'))<old));
+    sum.textContent=`${fmt(rows.length)} recent uploads (WDGWars keeps the last 50), newest first`;
+    box.innerHTML=rows.length?`<table><tr><th>When</th><th>Type</th><th>Status</th><th style="text-align:right">New</th><th style="text-align:right">Captured</th><th style="text-align:right">Reinforced</th><th style="text-align:right">Already yours</th><th>File</th></tr>${
+      rows.map(({o,i})=>{ const {g,kind}=wdgRowInfo(o), st=String(o.status||'done');
+        const bad=/fail|cancel/i.test(st), wait=/queue|process/i.test(st);
+        const isAir=kind==='Aircraft', isMesh=kind==='Mesh';
+        const nw=isAir?(g('aircraft_imported')??g('imported')):isMesh?((+g('meshcore_imported')||0)+(+g('meshtastic_imported')||0)):g('imported');
+        const seen=isAir?(g('aircraft_already_seen')??g('already_seen')):isMesh?((+g('meshcore_already_seen')||0)+(+g('meshtastic_already_seen')||0)):g('duplicates');
+        return `<tr data-i="${i}"><td>${upWhen(o.created_at||o.queued_at||o.finished_at)}</td><td>${kind}</td>
+          <td><span class="st ${bad?'bad':wait?'wait':'ok'}" title="${escHtml(o.error||'')}">${escHtml(st)}</span></td>
+          <td class="n g">${nw!=null?fmt(nw):'—'}</td><td class="n">${isAir||isMesh?'—':fmt(g('captured'))}</td><td class="n">${isAir||isMesh?'—':fmt(g('updated'))}</td>
+          <td class="n">${seen!=null?fmt(seen):'—'}</td><td class="f" title="${escHtml(o.filename||'')}">${escHtml(o.filename||o.endpoint||'')}</td></tr>`; }).join('')}</table>`
+      :'<div class="lbmsg">No uploads yet. Your next WDGWars upload shows up here.</div>';
+  } else {
+    sum.textContent=`Receipts Wardrift sent back for each upload from this PC (Wardrift has no upload history to read with a key)`;
+    const K={aircraft:'Aircraft',mesh:'Mesh',wifi:'Wi-Fi + BT'};
+    box.innerHTML=list.length?`<table><tr><th>When</th><th>Type</th><th>Status</th><th style="text-align:right">Sent</th><th style="text-align:right">XP</th><th style="text-align:right">Influence</th><th>Result</th></tr>${
+      list.map((r,i)=>`<tr data-i="${i}"><td>${upWhen(r.t)}</td><td>${K[r.kind]||escHtml(r.kind)}</td>
+        <td><span class="st ${r.ok?'ok':'bad'}">${r.ok?'sent':'failed'}</span></td><td class="n">${fmt(r.sent)}</td>
+        <td class="n g">${r.xp?'+'+fmt(r.xp):''}</td><td class="n">${r.influence?'+'+fmt(r.influence):''}</td>
+        <td class="f" title="${escHtml(r.summary)}">${escHtml(r.summary)}</td></tr>`).join('')}</table>`
+      :'<div class="lbmsg">No Wardrift uploads from this PC yet. The next one shows up here with its receipt.</div>';
+  }
+}
+function openUpload(i){
+  const o=(UP.rows||[])[i]; if(!o) return;
+  const kv=obj=>Object.entries(obj).filter(([k,v])=>v!==null&&v!==''&&typeof v!=='object')
+    .map(([k,v])=>`<span class="k">${escHtml(k)}</span><span class="v">${escHtml(typeof v==='number'?fmt(v):String(v))}</span>`).join('');
+  let title='Upload', body='';
+  if(UP.src==='wigle'){ title=o.id||'WiGLE upload';
+    body=`<div class="kv2">${kv({File:o.file,Date:o.date,Status:o.done?'done':(o.status||'processing'),Percent:o.percent>=0?o.percent+'%':'',
+      'New Wi-Fi (GPS)':o.new_wifi,'New Bluetooth (GPS)':o.new_bt,'New cell (GPS)':o.new_cell,'Wi-Fi in file':o.total_wifi,
+      'Bluetooth in file':o.total_bt,'Cell in file':o.total_cell,'Lines':o.lines,Size:fmtBytes(o.bytes)})}</div>`
+      +(Object.keys(o.extras||{}).length?`<div class="sub" style="margin-top:12px">MORE FROM WIGLE</div><div class="kv2">${kv(o.extras)}</div>`:'');
+  } else if(UP.src==='wdgwars'){ title=o.filename||'WDGWars upload';
+    body=`<div class="kv2">${kv(Object.fromEntries(Object.entries(o).filter(([k])=>k!=='result')))}</div>`
+      +(o.result&&typeof o.result==='object'?`<div class="sub" style="margin-top:12px">RESULT</div><div class="kv2">${kv(o.result)}</div>`:'');
+  } else { title='Wardrift '+({aircraft:'aircraft',mesh:'mesh',wifi:'Wi-Fi + BT'}[o.kind]||'upload');
+    body=`<div class="kv2">${kv({When:new Date(o.t*1000).toLocaleString(),Result:o.summary,Sent:o.sent,Credited:o.credited,XP:o.xp,Influence:o.influence,Currency:o.currency})}</div>`;
+  }
+  openModal(`<div class="hd"><h2>${escHtml(title)}</h2><div class="sub">${escHtml({wigle:'WiGLE',wdgwars:'WDGWars',wardrift:'Wardrift'}[UP.src])}</div></div><div class="bd">${body}</div>`);
+}
+$('#up-tabs').addEventListener('click',e=>{ const t=e.target.closest('[data-src]'); if(!t) return; UP.src=t.dataset.src; UP.sig='';
+  if(window._lastState) renderUploads(window._lastState); });
+$('#btn-up-refresh').onclick=()=>{ loadUploads(UP.src,true); toast('Refreshing uploads…'); };
+$('#up-box').addEventListener('click',e=>{ const tr=e.target.closest('tr[data-i]'); if(tr) openUpload(+tr.dataset.i); });
+// highlight the section in view
+(()=>{ const links=[...document.querySelectorAll('#secnav a')];
+  const io=new IntersectionObserver(es=>{ es.forEach(en=>{ if(en.isIntersecting){
+    links.forEach(a=>a.classList.toggle('on',a.getAttribute('href')==='#'+en.target.id)); } }); },{rootMargin:'-40% 0px -55% 0px'});
+  links.forEach(a=>{ const el=document.querySelector(a.getAttribute('href')); if(el) io.observe(el); }); })();
+
 async function loadWdBoard(tf){
   const c=LB.cache[tf];
   if(LB.loading[tf] || (c && !c.error && Date.now()/1000-(c.fetched||0)<60)) return;
@@ -1473,6 +1944,204 @@ $("#btn-upd-check").onclick=async()=>{ $("#upd-state").textContent='checking…'
   const r=await api('/api/update/check','POST',{});
   toast(r.available?('Update '+r.latest+' is available'):(r.error?'Update check failed':'You are up to date')); _updSig=''; poll(); };
 $("#btn-upd-install").onclick=installUpdate;
+// ---- wardriving ----
+function renderCaptures(w){
+  const c=w.captures||{};
+  const rows=c.recent||[];
+  $("#wv-caps").style.display=rows.length?'':'none';
+  $("#wv-caps-folder").textContent=c.folder?'  saved in '+c.folder:'';
+  const sig=JSON.stringify(rows);
+  const box=$("#wv-caps-feed"); if(box.dataset.sig===sig) return; box.dataset.sig=sig;
+  box.innerHTML=(c.key_warning?`<div class="hint" style="color:var(--red);margin-bottom:8px">⚠ ${escHtml(c.key_warning)}</div>`:'')+
+    `<table><tr><th>SSID</th><th>BSSID</th><th>Type</th><th>When</th><th>wpa-sec</th><th>Key</th></tr>${rows.map(r=>
+    `<tr><td>${escHtml(r.ssid||'(hidden)')}</td><td>${escHtml(r.bssid)}</td><td>${r.kind===2?'Handshake':'PMKID'}</td>`+
+    `<td>${new Date(r.time*1000).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</td><td>${capStatus(r.status)}</td>`+
+    `<td style="color:var(--green);font-weight:700;user-select:all">${escHtml(r.psk||'')}</td></tr>`).join('')}</table>`;
+}
+// One capture's progress on wpa-sec: waiting to send, sent, being cracked (with the
+// dictionary passes so far), or cracked.
+const CAP_ST={queued:'wait',sent:'wait',working:'wait',cracked:'ok'};
+function capStatus(s){
+  s=s||{}; const tip=[s.type,s.feat,s.info].filter(Boolean).join(' · ');
+  return `<span class="st ${CAP_ST[s.state]||''}" title="${escHtml(tip)}">${escHtml(s.text||'')}</span>`;
+}
+function hwSwitch(sel, show, on){
+  const lab=$(sel); lab.style.display=show?'':'none';
+  const inp=lab.querySelector('input'); if(document.activeElement!==inp) inp.checked=!!on;
+}
+// Every key wpa-sec has cracked for the account (this PC's captures and the phone's).
+document.addEventListener('click',e=>{ if(e.target.closest('.counter[data-keys]')) openKeys(); });
+function openKeys(){
+  const w=(window._lastState||{}).wardrive||{}, c=w.captures||{}, keys=c.keys||[], cfg=(window._lastState||{}).config||{};
+  const when=c.wpasec_checked?new Date(c.wpasec_checked*1000).toLocaleTimeString():'not yet';
+  const body=!cfg.has_wpasec?`<div class="hint">Add your wpa-sec key under Settings → Keys and accounts. Captures then upload as soon as they happen and cracked keys show up here.</div>`
+    :(c.key_warning?`<div class="hint" style="color:var(--red);margin-bottom:10px">⚠ ${escHtml(c.key_warning)}</div>`:'')
+     +`<div class="sub" style="margin-bottom:6px">YOUR CAPTURES · ${fmt(c.sent)} sent · ${fmt(c.on_account)} on wpa-sec</div>`
+     +((c.recent||[]).length?`<table class="keytbl"><tr><th>Network</th><th>Type</th><th>Status</th><th>Key</th></tr>${(c.recent||[]).map(r=>
+      `<tr><td class="s" title="${escHtml(r.bssid)}">${escHtml(r.ssid||'(hidden)')}</td><td>${r.kind===2?'Handshake':'PMKID'}</td><td>${capStatus(r.status)}</td><td class="k">${escHtml(r.psk||'')}</td></tr>`).join('')}</table>`
+      :'<div class="hint">No captures yet.</div>')
+     +`<div class="sub" style="margin:16px 0 6px">CRACKED ON YOUR ACCOUNT · ${fmt(keys.length)}</div>`
+     +(keys.length?`<table class="keytbl"><tr><th>Network</th><th>BSSID</th><th>Key</th><th></th></tr>${keys.map(k=>
+      `<tr><td class="s" title="${escHtml(k.ssid)}">${escHtml(k.ssid||'(unknown)')}</td><td>${escHtml(k.bssid)}</td><td class="k">${escHtml(k.psk)}</td><td class="hint">${k.here?'this PC':''}</td></tr>`).join('')}</table>`
+      :'<div class="hint">Nothing cracked on your wpa-sec account yet.</div>');
+  openModal(`<div class="hd"><h2>Handshakes and keys</h2><div class="sub">wpa-sec · ${fmt(keys.length)} on your account · checked ${escHtml(when)}${c.pending_wpasec?` · ${fmt(c.pending_wpasec)} captures waiting to send`:''}</div></div>
+    <div class="bd">${body}${c.wpasec_last?`<div class="hint" style="margin-top:10px">Last: ${escHtml(c.wpasec_last)}</div>`:''}</div>`);
+  $("#sheet").style.width='min(720px,94vw)';
+}
+
+// Phone GPS: a QR code that opens the phone page this PC serves.
+document.addEventListener('click',e=>{
+  const tile=e.target.closest('.dev[data-tile="gps:phone"]'); if(!tile||e.target.closest('.hwsw')) return;
+  openPhoneGps();
+});
+let _qrTimer=null;
+async function openPhoneGps(ipIdx){
+  const d=await api('/api/phone-gps');
+  if(!d.ok){ openModal(`<div class="hd"><h2>Connect your phone</h2></div><div class="bd">${escHtml(d.error||'Not available')}</div>`); return; }
+  const i=Math.min(ipIdx||0,d.links.length-1), L=d.links[i];
+  openModal(`<div class="hd"><h2>Connect your phone</h2><div class="sub">Your phone's GPS, straight to this PC. No app needed.</div></div>
+    <div class="bd" style="text-align:center">
+      <div class="qrbox">${L.svg}</div>
+      ${d.links.length>1?`<div class="tabs" style="justify-content:center">${d.links.map((x,j)=>`<div class="tab${j===i?' active':''}" data-qr="${j}">${escHtml(x.ip)}</div>`).join('')}</div>`:''}
+      <div class="qrstat" id="qr-stat">Waiting for your phone…</div>
+      <ol class="steps">
+        <li>Put the phone on <b>the same Wi-Fi</b> as this PC (or this PC on the phone's hotspot).</li>
+        <li><b>Scan the code</b> with the phone's camera.</li>
+        <li>The browser warns the connection is not private, because this PC made its own certificate. Tap <b>Advanced → Proceed</b> (Chrome) or <b>Show Details → visit this website</b> (Safari).</li>
+        <li>Tap <b>Start</b>, allow location, and keep the page open.</li>
+      </ol>
+      ${d.error?`<div class="hint" style="color:var(--red);margin-top:10px">${escHtml(d.error)}</div>`:''}
+      <div class="hint" style="margin-top:12px">GPS app instead? Send NMEA over TCP or UDP to <b>${escHtml(L.ip)}:${d.nmea_port}</b>.</div>
+    </div>`);
+  $("#sheet").querySelectorAll('[data-qr]').forEach(el=>el.onclick=()=>openPhoneGps(+el.dataset.qr));
+  clearInterval(_qrTimer);
+  _qrTimer=setInterval(()=>{
+    const el=$("#qr-stat"); if(!el||!$("#modal").classList.contains('show')){ clearInterval(_qrTimer); return; }
+    const src=((((window._lastState||{}).wardrive||{}).gps||{}).sources||[]).find(x=>x.id==='gps:phone')||{};
+    const f=src.fix;
+    if(f&&String(f.source||'').includes('browser')){ el.style.color='var(--green)'; el.textContent=`✓ Phone connected · ±${Math.round(f.acc)} m`; }
+    else { el.style.color='var(--muted)'; el.textContent='Waiting for your phone…'; }
+  },1000);
+}
+
+// One click turns a piece of hardware off or back on; it applies right away.
+document.addEventListener('change', async e=>{
+  const inp=e.target; if(!inp.closest||!inp.closest('.hwsw')) return;
+  const c=(window._lastState||{}).config||{};
+  let body;
+  if(inp.dataset.cfg){ body={[inp.dataset.cfg]:inp.checked}; }
+  else {
+    const off=new Set(c.hw_off||[]); inp.checked?off.delete(inp.dataset.hw):off.add(inp.dataset.hw);
+    body={hw_off:[...off]};
+  }
+  const r=await api('/api/config','POST',body);
+  toast(r.ok?(inp.checked?'Turned on':'Turned off'):'Could not change it');
+  _hwSig=''; poll();
+});
+const cleanName=n=>String(n||'').replace(/\((R|TM|C)\)/gi,'').replace(/\s+\d+MHz$/,'').replace(/\s{2,}/g,' ').trim();
+let _hwSig='';
+function renderHardware(s){
+  const w=s.wardrive||{}, c=s.config||{}, off=new Set(c.hw_off||[]);
+  const tiles=[];
+  for(const a of (w.adapters||[])){
+    const isOff=off.has(a.id);
+    if(a.monitor){
+      const live=a.state==='live';
+      const bad=['needs WinUSB','needs replug','stopped','unplugged'].includes(a.state);
+      if(a.state==='no desktop driver yet'){ tiles.push({id:a.id,n:cleanName(a.name),d:'Wi-Fi monitor · driver coming',dot:'warn',tip:a.detail||'',off:false,show:true,nosw:true}); continue; }
+      tiles.push({id:a.id,n:cleanName(a.name),d:isOff?'Wi-Fi monitor · off':(live?`Wi-Fi monitor · ch ${a.channel}`:`Wi-Fi monitor · ${a.state}`),
+        dot:isOff?'':(live?'on':(bad?'off':'warn')),tip:a.detail||'',off:isOff,show:a.state!=='unplugged'||isOff});
+    } else {
+      tiles.push({id:a.id,n:cleanName(a.name),d:isOff?'Wi-Fi · off':(a.state==='not ready'?'Wi-Fi · not ready':`Wi-Fi · ${a.networks} networks`),
+        dot:isOff?'':(a.state==='not ready'?'off':'on'),tip:a.name,off:isOff,show:true});
+    }
+  }
+  const bt=w.bt||{}, bl=w.ble||{}, btOff=off.has('bt');
+  tiles.push({id:'bt',n:'Bluetooth',d:btOff?'off':(bt.state==='scanning'?`${fmt(bl.in_view)} in view`:(bt.detail||bt.state||'starting')),
+    dot:btOff?'':(bt.state==='scanning'?'on':(bt.state==='unavailable'?'off':'warn')),tip:bt.detail||'',off:btOff,show:true});
+  const g=w.gps||{}, best=g.fix;
+  for(const x of (g.sources||[])){
+    const isOff=off.has(x.id)||x.state==='off', f=x.fix&&x.fix.usable?x.fix:null;
+    const inUse=f&&best&&best.source===f.source;
+    // A phone counts as connected while its fixes keep arriving, even when a
+    // still phone sends them a few seconds apart.
+    const phoneOn=x.id==='gps:phone'&&x.fix;
+    let d;
+    if(isOff) d='location · off';
+    else if(phoneOn) d=`connected · ±${Math.round(x.fix.acc)} m${inUse?' · in use':''}`;
+    else if(f) d=`location · ±${Math.round(f.acc)} m${f.sats?` · ${f.sats} sats`:''}${inUse?' · in use':''}`;
+    else if(x.id==='gps:phone') d='click to connect your phone';
+    else d='location · '+(x.state==='fix'?'no fix':x.state);
+    tiles.push({id:x.id,n:x.name+(x.detail&&x.id==='gps:windows'&&f?` (${x.detail})`:''),d,
+      dot:isOff?'':(f||phoneOn?'on':(x.state==='unavailable'?'off':'warn')),
+      tip:x.id==='gps:phone'?`Send NMEA (TCP or UDP) to ${(w.lan||[]).join(' or ')||'this PC'} port ${w.net_port}`:(x.detail||''),off:isOff,show:true});
+  }
+  const shown=tiles.filter(x=>x.show);
+  const sig=JSON.stringify(shown);
+  if(sig!==_hwSig){
+    _hwSig=sig;
+    $("#hw-dyn").innerHTML=shown.map(x=>`<div class="dev${x.off?' isoff':''}${x.id==='gps:phone'?' clickable':''}" data-tile="${escHtml(x.id)}" title="${escHtml(x.id==='gps:phone'?'Click for the QR code that connects your phone':x.tip)}"><div class="dot ${x.dot}"></div><div><div class="n">${escHtml(x.n)}</div><div class="d">${escHtml(x.d)}</div></div>`
+      +(x.nosw?'':`<label class="hwsw" title="Use this hardware"><input type="checkbox" data-hw="${escHtml(x.id)}"${x.off?'':' checked'}><span></span></label>`)+'</div>').join('');
+  }
+  const stuck=(w.adapters||[]).find(a=>a.monitor&&!off.has(a.id)&&(a.state==='needs replug'||a.state==='needs WinUSB'));
+  $("#hw-note").textContent=w.error||(stuck?`${cleanName(stuck.name)}: ${stuck.detail}`:'')||w.reason||'';
+}
+const BLE_MAKERS={76:'Apple',6:'Microsoft',117:'Samsung',224:'Google',89:'Nordic',135:'Garmin',741:'Espressif',369:'Amazon',911:'Xiaomi',301:'Sony',196:'LG',343:'Bose',1447:'Tile',2470:'Meta'};
+const secShort=a=>!a?'':a.includes('SAE')?'WPA3':a.includes('WPA2')||a.includes('RSN')?'WPA2':a.includes('WPA')?'WPA':a.includes('WEP')?'WEP':'Open';
+function wvFeed(sel, rows, row, empty){
+  const box=$(sel), sig=rows.map(r=>r.mac+r.rssi).join('|')||('e:'+empty);
+  if(box.dataset.sig===sig) return; box.dataset.sig=sig;
+  box.innerHTML=rows.length?`<table>${row(null)}${rows.map(r=>row(r)).join('')}</table>`:`<div class="empty">${empty}</div>`;
+}
+let _prevWifi=null, _prevBle=null;
+function renderWardrive(s){
+  window._lastState=s;
+  const w=s.wardrive||{}, c=s.config||{};
+  renderHardware(s);
+  const wf=w.wifi||{}, bl=w.ble||{}, cap=w.captures||{}, pend=w.pending||{};
+  const queued=Math.max(c.has_wigle?pend.wigle||0:0, c.has_api_key?pend.wdgwars||0:0, c.has_wardrift_key?pend.wardrift||0:0);
+  animateNum($("#n-wifi"), wf.run||0); animateNum($("#n-ble"), bl.run||0);
+  $("#t-wifi").textContent=fmt(wf.all)+" total";
+  $("#t-ble").textContent=fmt(bl.all)+" total";
+  $("#s-wifi").textContent=$("#s-ble").textContent=fmt(queued)+" rows to send";
+  $("#s-wifi").title=$("#s-ble").title=['wigle','wdgwars','wardrift'].map(k=>`${{wigle:'WiGLE',wdgwars:'WDGWars',wardrift:'Wardrift'}[k]}: ${fmt(pend[k])} rows${(w.last_upload||{})[k]?' · last: '+w.last_upload[k]:''}`).join('\n');
+  if(_prevWifi!=null && (wf.run||0)>_prevWifi) burst("#b-wifi",(wf.run||0)-_prevWifi);
+  if(_prevBle!=null && (bl.run||0)>_prevBle) burst("#b-ble",(bl.run||0)-_prevBle);
+  _prevWifi=wf.run||0; _prevBle=bl.run||0;
+  animateNum($("#n-hs"), cap.run_handshakes||0); animateNum($("#n-pmk"), cap.run_pmkids||0);
+  $("#t-hs").textContent=fmt(cap.handshakes)+" total";
+  $("#t-pmk").textContent=fmt(cap.pmkids)+" total";
+  $("#s-hs").textContent=!c.has_wpasec?'no wpa-sec key':cap.key_warning?'check wpa-sec key':cap.cracked?`${fmt(cap.cracked)} cracked`
+    :cap.pending_wpasec?`${fmt(cap.pending_wpasec)} to send`:`${fmt(cap.on_account)} on wpa-sec`;
+  $("#s-hs").style.color=cap.key_warning?'var(--red)':'';
+  $("#s-pmk").textContent=`${fmt((cap.eapol||{}).eapol)} EAPOL`;
+  $("#s-pmk").title='EAPOL key frames heard by monitor-mode adapters';
+  renderCaptures(w);
+  const wifi=w.feed_wifi||[], ble=w.feed_ble||[];
+  $("#wv-lc-wifi").textContent=wifi.length; $("#wv-lc-ble").textContent=ble.length;
+  const noFix=w.reason?' · waiting for a location fix':'';
+  wvFeed("#wv-feed-wifi", wifi, r=>r?`<tr><td>${escHtml(r.ssid||'(hidden)')}</td><td>${escHtml(r.mac)}</td><td>${r.channel??''}</td><td>${r.rssi}</td><td class="sec">${secShort(r.auth)}</td></tr>`
+    :'<tr><th>SSID</th><th>MAC</th><th>Ch</th><th>dBm</th><th>Sec</th></tr>', 'no Wi-Fi heard in the last few seconds'+noFix);
+  wvFeed("#wv-feed-ble", ble, r=>r?`<tr><td>${escHtml(r.name||'—')}</td><td>${escHtml(r.mac)}</td><td>${r.rssi}</td><td class="sec">${escHtml(BLE_MAKERS[r.mfgr]||(r.mfgr!=null?'#'+r.mfgr:''))}</td></tr>`
+    :'<tr><th>Name</th><th>MAC</th><th>dBm</th><th>Maker</th></tr>', 'no Bluetooth heard in the last few seconds'+noFix);
+}
+function fillWardriveSettings(s){
+  const c=s.config||{}, w=s.wardrive||{};
+  if(document.activeElement!==$("#f-wpasec")) $("#f-wpasec").placeholder=c.has_wpasec?'•••••••• key set — type to change':'optional — 32-character key';
+  fillIfIdle("#f-gps-net-port", c.gps_net_port||10110);
+  $("#wv-ip").textContent=(w.lan&&w.lan.length)?w.lan.join(' or '):'this PC';
+  fillIfIdle("#f-wigle-name", c.wigle_api_name||'');
+  if(document.activeElement!==$("#f-wigle-token")) $("#f-wigle-token").placeholder=c.has_wigle?'•••••••• token set — type to change':'API Token';
+  const st=(sel,ok,txt)=>{const b=$(sel); b.className='sstat '+(ok?'ok':''); b.textContent=txt;};
+  st("#sst-wigle", c.has_wigle, c.has_wigle?'key set':'no key');
+  st("#sst-wpasec", c.has_wpasec, c.has_wpasec?'key set':'no key');
+}
+$("#btn-wigle-test").onclick=async()=>{
+  const m=$("#wigle-msg"); m.className='msg'; m.textContent='checking with WiGLE…';
+  const r=await api('/api/wigle/test','POST',{name:$("#f-wigle-name").value.trim(),token:$("#f-wigle-token").value.trim()});
+  if(r.ok){ m.className='msg ok'; m.textContent='✓ valid — '+(r.username||'account found'); }
+  else { m.className='msg err'; m.textContent='✗ '+(r.error||'not accepted'); }
+};
 let _acctSig='';
 function renderWdAccount(s){
   const c=s.config||{}, wd=s.wardrift||{};

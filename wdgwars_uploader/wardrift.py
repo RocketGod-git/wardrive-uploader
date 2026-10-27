@@ -400,9 +400,24 @@ class WardriftClient:
             res.sent.extend(part)
         return res
 
-    def _post(self, data: bytes) -> tuple[dict[str, Any], str]:
+    def upload_csv(self, gz: bytes, name: str) -> tuple[bool, str]:
+        """A gzipped WigleWifi CSV of Wi-Fi and Bluetooth rows."""
+        receipt, err = self._post(gz, name)
+        if err:
+            return False, err
+        bits = []
+        for k, label in (("accepted", "accepted"), ("duplicate", "duplicate"), ("awarded_exp", "XP"),
+                         ("awarded_influence", "influence")):
+            if receipt.get(k) and not isinstance(receipt[k], bool):   # "accepted" can be a plain true
+                bits.append(f"{receipt[k]} {label}" if label != "XP" else f"+{receipt[k]} XP")
+        toys = receipt.get("toys") or {}
+        if isinstance(toys, dict) and toys.get("new_count"):
+            bits.append(f"+{toys['new_count']} toys")
+        return True, ", ".join(bits) or "accepted"
+
+    def _post(self, data: bytes, name: str = "") -> tuple[dict[str, Any], str]:
         headers = {"Content-Type": "application/gzip",
-                   "X-File-Name": upload_file_name(self.label, "aircraft.json.gz")}
+                   "X-File-Name": name or upload_file_name(self.label, "aircraft.json.gz")}
         for attempt in range(3):
             try:
                 resp = self.session.post(f"{BASE}/ingest/signals", data=data,

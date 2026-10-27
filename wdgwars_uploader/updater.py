@@ -43,7 +43,7 @@ Wait-Process -Id $AppPid -Timeout 60
 $name = [IO.Path]::GetFileNameWithoutExtension($Exe)
 $t = 0
 while ((Get-Process -Name $name) -and $t -lt 30) { Start-Sleep 1; $t++ }
-Get-Process -Name $name | Stop-Process -Force
+Get-Process -Name $name,'WardriveUploader','WDGWarsUploader' | Stop-Process -Force
 Start-Sleep 1
 $code = -1
 try {
@@ -51,7 +51,13 @@ try {
   $code = $p.ExitCode
 } catch { $code = -2 }
 Set-Content -Path $Result -Value "{`"code`": $code, `"msi`": `"$([IO.Path]::GetFileName($Msi))`"}" -Encoding ASCII
-Start-Process explorer.exe -ArgumentList "`"$Exe`""
+# The installer starts the new version itself; only start it when it has not.
+Start-Sleep 4
+if (-not (Get-Process -Name 'WardriveUploader')) {
+  $launch = $Exe
+  if (-not (Test-Path $launch)) { $launch = Join-Path $env:ProgramW6432 'Wardrive Uploader\WardriveUploader.exe' }
+  Start-Process explorer.exe -ArgumentList "`"$launch`""
+}
 """
 
 

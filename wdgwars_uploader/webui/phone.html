@@ -1,0 +1,167 @@
+<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#05080c">
+<title>Phone GPS · Wardrive Uploader</title>
+<style>
+:root{color-scheme:dark;--cyan:#00e5ff;--mag:#ff2d95;--green:#25f4a7;--amber:#ffb300;--red:#ff4d5e;--muted:#5f7285;--line:#16222e}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:#05080c;color:#c7d6e5;font:15px/1.35 ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+.bg{position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:radial-gradient(60vmax 40vmax at 15% 0%,rgba(0,229,255,.12),transparent 60%),
+             radial-gradient(60vmax 40vmax at 100% 100%,rgba(255,45,149,.12),transparent 60%),#05080c}
+.bg::before{content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(0,229,255,.06) 1px,transparent 1px),
+  linear-gradient(90deg,rgba(0,229,255,.06) 1px,transparent 1px);background-size:34px 34px;
+  mask-image:radial-gradient(circle at 50% 38%,#000 0,transparent 75%);-webkit-mask-image:radial-gradient(circle at 50% 38%,#000 0,transparent 75%)}
+.bg::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(0deg,rgba(255,255,255,.025) 0 1px,transparent 1px 3px)}
+/* Everything fits one screen on any phone: sizes follow the screen height, nothing scrolls. */
+.wrap{position:relative;z-index:1;height:100vh;height:100dvh;width:100%;overflow:hidden;display:flex;flex-direction:column;align-items:center;
+  justify-content:space-between;padding:calc(1.6dvh + env(safe-area-inset-top)) 14px calc(1.4dvh + env(safe-area-inset-bottom))}
+.top,.mid,.bottom{display:flex;flex-direction:column;align-items:center;width:100%}
+.brand{font-size:clamp(9px,1.35dvh,11px);letter-spacing:4px;color:var(--muted);text-align:center;white-space:nowrap}
+.brand b{display:block;font-size:clamp(13px,2.1dvh,17px);letter-spacing:5px;margin-top:2px;
+  background:linear-gradient(90deg,var(--cyan),#fff 45%,var(--mag));-webkit-background-clip:text;background-clip:text;color:transparent}
+.radar{position:relative;width:min(74vw,36dvh,330px);aspect-ratio:1;margin:1.4dvh 0 .6dvh}
+.ring{position:absolute;inset:0;border-radius:50%;border:1px solid rgba(0,229,255,.25);box-shadow:0 0 30px rgba(0,229,255,.12) inset}
+.ring.r2{inset:16%;border-color:rgba(0,229,255,.18)} .ring.r3{inset:32%;border-color:rgba(0,229,255,.14)}
+.cross{position:absolute;inset:0;background:linear-gradient(rgba(0,229,255,.12),rgba(0,229,255,.12)) center/1px 100% no-repeat,
+  linear-gradient(90deg,rgba(0,229,255,.12),rgba(0,229,255,.12)) center/100% 1px no-repeat}
+.sweep{position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 0deg,rgba(0,229,255,.55),rgba(0,229,255,.08) 18%,transparent 30%);
+  animation:spin 3.2s linear infinite;opacity:.25;transition:opacity .6s}
+.live .sweep{opacity:1}
+.err .sweep{background:conic-gradient(from 0deg,rgba(255,77,94,.5),transparent 25%)}
+@keyframes spin{to{transform:rotate(360deg)}}
+/* TPP logo: breathes, a holographic sheen passes over it, and now and then it glitches in cyan and magenta. */
+.logo{position:absolute;inset:27%;border-radius:50%;overflow:hidden;background:#000;
+  box-shadow:0 0 0 2px var(--cyan),0 0 34px rgba(0,229,255,.45);animation:breathe 3s ease-in-out infinite}
+.logo i{position:absolute;inset:0;background:url(/tpp.png) center/86% no-repeat;animation:glitch 7s steps(1) infinite}
+.logo i.c{mix-blend-mode:screen;opacity:0;filter:sepia(1) hue-rotate(140deg) saturate(6);animation:split-c 7s steps(1) infinite}
+.logo i.m{mix-blend-mode:screen;opacity:0;filter:sepia(1) hue-rotate(280deg) saturate(6);animation:split-m 7s steps(1) infinite}
+.logo::after{content:"";position:absolute;inset:-40%;background:linear-gradient(115deg,transparent 42%,rgba(255,255,255,.22) 50%,transparent 58%);
+  animation:sheen 4.5s ease-in-out infinite}
+.live .logo{box-shadow:0 0 0 2px var(--green),0 0 44px rgba(37,244,167,.55)}
+.err .logo{box-shadow:0 0 0 2px var(--red),0 0 34px rgba(255,77,94,.45)}
+@keyframes breathe{50%{transform:scale(1.035)}}
+@keyframes sheen{0%,55%{transform:translateX(-60%)}85%,100%{transform:translateX(60%)}}
+@keyframes glitch{0%,88%,100%{transform:none}89%{transform:translate(-2px,1px) skewX(4deg)}90%{transform:translate(2px,-1px)}91%{transform:none}95%{transform:translateX(1px) skewX(-3deg)}96%{transform:none}}
+@keyframes split-c{0%,88%,92%,100%{opacity:0;transform:none}89%{opacity:.9;transform:translateX(-4px)}90%{opacity:.7;transform:translateX(3px)}95%{opacity:.6;transform:translateX(-2px)}96%{opacity:0}}
+@keyframes split-m{0%,88%,92%,100%{opacity:0;transform:none}89%{opacity:.9;transform:translateX(4px)}90%{opacity:.7;transform:translateX(-3px)}95%{opacity:.6;transform:translateX(2px)}96%{opacity:0}}
+.ping{position:absolute;inset:27%;border-radius:50%;border:2px solid var(--green);opacity:0;pointer-events:none}
+.ping.go{animation:ping 1.2s ease-out}
+@keyframes ping{0%{opacity:.9;transform:scale(1)}100%{opacity:0;transform:scale(2.2)}}
+.blip{position:absolute;width:8px;height:8px;margin:-4px 0 0 -4px;border-radius:50%;background:var(--mag);box-shadow:0 0 10px var(--mag);
+  animation:fade 2.4s ease-out forwards}
+@keyframes fade{0%{opacity:1;transform:scale(1.6)}100%{opacity:0;transform:scale(.6)}}
+.state{font-size:clamp(20px,3.6dvh,30px);font-weight:900;letter-spacing:6px;color:var(--amber);text-shadow:0 0 18px rgba(255,179,0,.4);transition:color .3s;white-space:nowrap}
+.live .state{color:var(--green);text-shadow:0 0 22px rgba(37,244,167,.5)}
+.err .state{color:var(--red);text-shadow:0 0 18px rgba(255,77,94,.45)}
+.sub{color:var(--muted);font-size:clamp(11px,1.6dvh,13px);margin-top:.3dvh;text-align:center;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.coords{margin-top:.9dvh;font-size:clamp(11px,1.6dvh,13px);color:#9fb0c0;letter-spacing:1px;font-variant-numeric:tabular-nums;min-height:1.2em;white-space:nowrap}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:clamp(6px,1.1dvh,10px);width:min(100%,420px)}
+.tile{border:1px solid var(--line);border-radius:12px;padding:clamp(6px,1.1dvh,10px) 12px;background:rgba(7,12,18,.8);position:relative;overflow:hidden;min-width:0}
+.tile::before{content:"";position:absolute;top:0;left:0;width:22px;height:2px;background:var(--cyan);box-shadow:0 0 8px var(--cyan)}
+.tile b{display:block;font-size:clamp(17px,2.9dvh,24px);color:#eef;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile span{font-size:clamp(8px,1.2dvh,10px);letter-spacing:2px;color:var(--muted);text-transform:uppercase;white-space:nowrap}
+.tile.g b{color:var(--green)} .tile.m b{color:var(--mag)}
+.meter{height:5px;border-radius:6px;background:#0e1620;margin-top:.6dvh;overflow:hidden}
+.meter i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--red),var(--amber) 40%,var(--green));transition:width .6s}
+button{font:inherit;font-size:clamp(15px,2.3dvh,18px);font-weight:900;letter-spacing:5px;padding:clamp(12px,2dvh,18px) 44px;border-radius:14px;cursor:pointer;
+  color:#eafff5;border:1px solid var(--green);background:linear-gradient(90deg,#0f7a55,#0a4f38);
+  box-shadow:0 0 26px rgba(37,244,167,.35),inset 0 0 18px rgba(37,244,167,.2);animation:glow 2s ease-in-out infinite}
+@keyframes glow{50%{box-shadow:0 0 40px rgba(37,244,167,.6),inset 0 0 18px rgba(37,244,167,.3)}}
+.msg{color:var(--red);font-size:12px;max-width:420px;text-align:center;min-height:1.2em;margin-top:.6dvh}
+.hint{font-size:clamp(9px,1.3dvh,11px);color:var(--muted);white-space:nowrap}
+.links{display:flex;gap:clamp(12px,3.5vw,18px);margin-top:1dvh}
+.links a{--c:#fff;--g:rgba(255,255,255,.35);width:clamp(42px,6.4dvh,54px);height:clamp(42px,6.4dvh,54px);border-radius:16px;display:flex;
+  align-items:center;justify-content:center;position:relative;background:radial-gradient(circle at 50% 30%,color-mix(in srgb,var(--c) 22%,transparent),rgba(7,12,18,.92) 70%);
+  border:1px solid color-mix(in srgb,var(--c) 55%,transparent);box-shadow:0 0 16px var(--g),inset 0 0 12px color-mix(in srgb,var(--c) 18%,transparent);
+  transition:transform .15s,box-shadow .2s;animation:hum 3.2s ease-in-out infinite}
+.links a:nth-child(2){animation-delay:.4s} .links a:nth-child(3){animation-delay:.8s} .links a:nth-child(4){animation-delay:1.2s}
+.links a:active,.links a:hover{transform:translateY(-2px) scale(1.06);box-shadow:0 0 28px var(--g),inset 0 0 14px color-mix(in srgb,var(--c) 30%,transparent)}
+@keyframes hum{50%{box-shadow:0 0 26px var(--g),inset 0 0 14px color-mix(in srgb,var(--c) 26%,transparent)}}
+.links svg{width:55%;height:55%;filter:drop-shadow(0 0 6px var(--g))}
+.links a.ios{--c:#e8f0ff;--g:rgba(200,220,255,.45)} .links a.ios svg{fill:url(#gIos);width:66%;height:66%}
+.links a.and{--c:#3ddc84;--g:rgba(61,220,132,.45)} .links a.and svg{fill:url(#gPlay)}
+.links a.dc{--c:#5865f2;--g:rgba(88,101,242,.6)} .links a.dc svg{fill:#8b95ff}
+.links a.rg{--c:#ff2d95;--g:rgba(255,45,149,.5)} .links a.rg svg{fill:url(#gRg)}
+@media (prefers-reduced-motion:reduce){.sweep,.logo,.logo i,.logo::after,button,.links a{animation:none}}
+</style></head><body>
+<div class="bg"></div>
+<div class="wrap" id="app">
+  <div class="top">
+    <div class="brand">THE PIRATES' PLUNDER<b>PHONE GPS LINK</b></div>
+    <div class="radar" id="radar"><div class="ring"></div><div class="ring r2"></div><div class="ring r3"></div><div class="cross"></div>
+      <div class="sweep"></div><div class="logo"><i></i><i class="c"></i><i class="m"></i></div><div class="ping" id="ping"></div></div>
+    <div class="state" id="state">READY</div>
+    <div class="sub" id="sub">Tap Start and allow location</div>
+    <div class="coords" id="coords"></div>
+  </div>
+  <div class="mid">
+    <div class="grid" id="grid" style="display:none">
+      <div class="tile g"><b id="acc">—</b><span>Accuracy</span><div class="meter"><i id="accm"></i></div></div>
+      <div class="tile"><b id="spd">—</b><span>Speed</span></div>
+      <div class="tile m"><b id="n">0</b><span>Fixes sent</span></div>
+      <div class="tile"><b id="up">0:00</b><span>Linked for</span></div>
+    </div>
+    <button id="go">START</button>
+    <div class="msg" id="err"></div>
+  </div>
+  <div class="bottom">
+    <div class="hint">Keep this page open while you drive</div>
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+      <linearGradient id="gIos" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#9fb4d8"/></linearGradient>
+      <linearGradient id="gPlay" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#00d7fe"/><stop offset=".35" stop-color="#3ddc84"/><stop offset=".7" stop-color="#ffd400"/><stop offset="1" stop-color="#ff3a44"/></linearGradient>
+      <linearGradient id="gRg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#00e5ff"/><stop offset="1" stop-color="#ff2d95"/></linearGradient>
+    </defs></svg>
+    <div class="links">
+      <a class="ios" href="https://apps.apple.com/app/id6783390938" target="_blank" rel="noopener" title="Wardrive Go for iPhone" aria-label="Wardrive Go for iPhone">
+        <svg viewBox="0 0 24 24"><path d="M16.37 12.6c.02 2.53 2.22 3.37 2.25 3.38-.02.06-.35 1.2-1.16 2.38-.7 1.02-1.42 2.04-2.57 2.06-1.12.02-1.49-.67-2.77-.67-1.29 0-1.69.65-2.75.69-1.1.04-1.95-1.11-2.65-2.13-1.45-2.08-2.55-5.88-1.07-8.45.74-1.27 2.05-2.08 3.47-2.1 1.08-.02 2.1.73 2.77.73.66 0 1.9-.9 3.21-.77.55.02 2.09.22 3.08 1.67-.08.05-1.84 1.07-1.81 3.21M14.25 4.6c.59-.71.98-1.7.87-2.69-.85.03-1.88.57-2.49 1.28-.55.63-1.03 1.63-.9 2.6.95.07 1.92-.48 2.52-1.19"/></svg></a>
+      <a class="and" href="https://play.google.com/store/apps/details?id=com.rocketgod.wardrive" target="_blank" rel="noopener" title="Wardrive Go for Android" aria-label="Wardrive Go for Android">
+        <svg viewBox="0 0 24 24"><path d="M3.6 2.3c-.2.2-.3.6-.3 1v17.4c0 .4.1.8.3 1l9.7-9.7L3.6 2.3zm10.4 10.4 2.6 2.6-12 6.9 9.4-9.5zm3.5-3.5 3 1.7c.9.5.9 1.4 0 1.9l-3.1 1.8-2.8-2.7 2.9-2.7zM4.6 1.8l12 6.9L14 11.3 4.6 1.8z"/></svg></a>
+      <a class="dc" href="https://discord.gg/thepirates" target="_blank" rel="noopener" title="The Pirates' Plunder on Discord" aria-label="Discord">
+        <svg viewBox="0 0 24 24"><path d="M19.6 5.3A16.6 16.6 0 0 0 15.5 4l-.5 1a15.4 15.4 0 0 0-6 0L8.5 4a16.5 16.5 0 0 0-4.1 1.3C1.8 9.2 1.1 13 1.5 16.7a16.7 16.7 0 0 0 5 2.5l1.1-1.7a10.8 10.8 0 0 1-1.7-.8l.4-.3a11.9 11.9 0 0 0 10.2 0l.4.3c-.5.3-1.1.6-1.7.8l1.1 1.7a16.6 16.6 0 0 0 5-2.5c.5-4.3-.8-8.1-3.7-11.4zM8.7 14.4c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.8.9 1.8 2-.8 2-1.8 2zm6.6 0c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.8.9 1.8 2-.8 2-1.8 2z"/></svg></a>
+      <a class="rg" href="https://rocketgod.dev" target="_blank" rel="noopener" title="rocketgod.dev" aria-label="rocketgod.dev">
+        <svg viewBox="0 0 24 24"><path d="M12 2.2c3.4 1.9 5.3 5.3 5.3 9.4 0 1.4-.2 2.7-.7 3.9l2.3 2.3-.9 3.1-2.9-1.9H8.9L6 20.9l-.9-3.1 2.3-2.3c-.5-1.2-.7-2.5-.7-3.9 0-4.1 1.9-7.5 5.3-9.4zm0 6.1a1.9 1.9 0 1 0 0 3.8 1.9 1.9 0 0 0 0-3.8zm-1.5 11.2h3l-1.5 2.3-1.5-2.3z"/></svg></a>
+    </div>
+  </div>
+</div>
+<script>
+const K=new URLSearchParams(location.search).get('k')||'';
+let n=0, watch=null, lock=null, lastOk=0, t0=0;
+const $=id=>document.getElementById(id), app=$('app');
+async function keepAwake(){ try{ if('wakeLock' in navigator) lock=await navigator.wakeLock.request('screen'); }catch(e){} }
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible'&&watch!==null) keepAwake(); });
+function mode(m,st,sub){ app.classList.toggle('live',m==='live'); app.classList.toggle('err',m==='err'); $('state').textContent=st; $('sub').textContent=sub; }
+function ping(){ const p=$('ping'); p.classList.remove('go'); void p.offsetWidth; p.classList.add('go');
+  const r=$('radar'), a=Math.random()*Math.PI*2, d=30+Math.random()*16, b=document.createElement('div');
+  b.className='blip'; b.style.left=(50+Math.cos(a)*d)+'%'; b.style.top=(50+Math.sin(a)*d)+'%'; r.appendChild(b); setTimeout(()=>b.remove(),2500); }
+async function send(p){
+  const c=p.coords;
+  const body={lat:c.latitude,lon:c.longitude,acc:c.accuracy,alt:c.altitude,speed:c.speed,course:c.heading,t:p.timestamp};
+  $('coords').textContent=c.latitude.toFixed(5)+'°, '+c.longitude.toFixed(5)+'°';
+  $('acc').textContent='±'+Math.round(c.accuracy)+' m';
+  $('accm').style.width=Math.max(4,Math.min(100,100-(c.accuracy-3)*1.4))+'%';
+  $('spd').textContent=c.speed!=null&&!isNaN(c.speed)?Math.round(c.speed*2.23694)+' mph':'0 mph';
+  try{
+    const r=await fetch('/fix?k='+encodeURIComponent(K),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!r.ok) throw new Error(r.status===403?'This link is out of date. Scan the QR code on the PC again.':'The PC answered '+r.status);
+    n++; lastOk=Date.now(); $('n').textContent=n.toLocaleString(); $('err').textContent='';
+    mode('live','LINKED','streaming to the PC'); ping();
+  }catch(e){ $('err').textContent=String(e.message||e); mode('err','NO LINK','cannot reach the PC'); }
+}
+$('go').onclick=()=>{
+  if(!navigator.geolocation){ $('err').textContent='This browser has no location access.'; return; }
+  $('grid').style.display=''; $('go').style.display='none'; t0=Date.now();
+  mode('','ACQUIRING','waiting for a location fix'); keepAwake();
+  watch=navigator.geolocation.watchPosition(send,e=>{
+    $('err').textContent=e.code===1?'Location is blocked for this page. Allow it in the browser settings, then reload.':'Location error: '+e.message;
+    mode('err','NO LOCATION','');
+  },{enableHighAccuracy:true,maximumAge:0,timeout:20000});
+};
+// Browsers report a new position only when it changes, so a phone sitting still
+// would go quiet. Ask for a fresh fix every 2 s as well.
+setInterval(()=>{ if(watch!==null) navigator.geolocation.getCurrentPosition(send,()=>{},{enableHighAccuracy:true,maximumAge:1000,timeout:5000}); },2000);
+setInterval(()=>{
+  if(t0){ const s=Math.floor((Date.now()-t0)/1000); $('up').textContent=Math.floor(s/3600)?Math.floor(s/3600)+':'+String(Math.floor(s%3600/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0'):Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); }
+  if(lastOk&&Date.now()-lastOk>15000) mode('err','WAITING','no new fix in 15 s');
+},1000);
+</script></body></html>

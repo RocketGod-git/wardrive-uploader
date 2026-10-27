@@ -3,6 +3,14 @@ pyserial>=3.5
 pystray>=0.19.5
 Pillow>=10.0
 meshcore>=1.1.0
+# Wardriving: Bluetooth scanning (also used by MeshCore over BLE) and Windows location.
+bleak>=0.22
+winrt-Windows.Devices.Geolocation>=3.0
+# Monitor-mode USB Wi-Fi adapters (libusb).
+libusb1>=3.1
+# Phone GPS from the phone's browser: QR code and the page's HTTPS certificate.
+segno>=1.6
+cryptography>=42
 
 # Optional: read Meshtastic devices too (in addition to MeshCore).
 #   pip install meshtastic

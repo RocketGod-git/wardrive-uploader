@@ -172,7 +172,14 @@ class UploaderApp:
             me = (wd.get("leaderboard") or {}).get("me") or {}
             games.append({"game": "WARDRIFT", "name": f"{ch['name']} · Lv {ch.get('level') or '?'}",
                           "color": traymenu.GOLD, "rank": f"#{me['rank']} global" if me.get("rank") else ""})
-        return {"adsb": adsb_row, "mesh": mesh_row, "queue": queue_row, "next": next_row,
+        wv = s.get("wardrive") or {}
+        wardrive_row = None
+        if wv.get("enabled"):
+            wf, bl = wv.get("wifi") or {}, wv.get("ble") or {}
+            wardrive_row = (("on" if wv.get("logging") else "warn"), "Wardrive",
+                            f"{wf.get('run', 0):,} Wi-Fi · {bl.get('run', 0):,} BT" if wv.get("logging")
+                            else "waiting for GPS")
+        return {"adsb": adsb_row, "mesh": mesh_row, "wardrive": wardrive_row, "queue": queue_row, "next": next_row,
                 "games": games, "activity": "uploading" if busy else "online",
                 "interval": int(self.cfg.get("interval_hours", 4)), "boot": autostart.is_enabled(),
                 "update": (self.updater.status.get("latest") if self.updater.status.get("available")
@@ -233,6 +240,7 @@ class UploaderApp:
             "mesh_transport", "mesh_port", "mesh_baud", "mesh_ble_address",
             "mesh_advert_minutes", "mesh_devices", "mesh_hop_limit",
             "dump1090_gain", "start_on_boot", "upload_on_start",
+            "hw_off", "gps_net_port", "wigle_api_name", "wigle_api_token", "wpasec_key",
         }
         clean = {k: v for k, v in values.items() if k in allowed}
         key_changed = "api_key" in clean and clean["api_key"] != self.cfg.get("api_key")
@@ -319,7 +327,7 @@ class UploaderApp:
             self.state.save_collected(force=True)
         except Exception:
             pass
-        for stopper in (self.scheduler.stop, self.poller.stop, self.core.capture.stop,
+        for stopper in (self.scheduler.stop, self.poller.stop, self.core.capture.stop, self.core.wardriver.stop,
                         self.server.stop, adsb.stop_dump1090, mayhem.stop):
             try:
                 stopper()
@@ -343,7 +351,7 @@ _NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
 
 def _kill_stale_app_instances() -> None:
-    """Frozen build only: forcibly end any OTHER WDGWarsUploader *app* instances,
+    """Frozen build only: forcibly end any OTHER Wardrive Uploader *app* instances,
     leaving watchdogs and this process alone. A serial deadlock can leave a hung
     zombie that still holds the COM port and the dashboard socket; a restart must
     clear it before reopening them, or the new instance comes up crippled - no
@@ -352,7 +360,7 @@ def _kill_stale_app_instances() -> None:
     if sys.platform != "win32" or not getattr(sys, "frozen", False):
         return
     me = os.getpid()
-    ps = ("Get-CimInstance Win32_Process -Filter \"Name='WDGWarsUploader.exe'\" | "
+    ps = ("Get-CimInstance Win32_Process -Filter \"Name='WardriveUploader.exe' OR Name='WDGWarsUploader.exe'\" | "
           "ForEach-Object { \"$($_.ProcessId)`t$($_.CommandLine)\" }")
     try:
         out = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
@@ -381,6 +389,9 @@ def _kill_stale_app_instances() -> None:
 def main(open_dash: bool = True, takeover: bool = False) -> None:
     setup_logging()
     log.info("%s v%s starting%s", APP_NAME, __version__, " (takeover)" if takeover else "")
+    from . import config as _config
+    if _config.MOVE_ERROR:
+        log.warning("data folder: %s", _config.MOVE_ERROR)
     if takeover:
         # A watchdog restart or logon autostart: kill any hung predecessor first so
         # the COM port and port 8787 are free.
@@ -396,16 +407,26 @@ def main(open_dash: bool = True, takeover: bool = False) -> None:
         try:
             pid = int(lock.read_text().strip() or "0")
             if pid and _pid_alive(pid):
-                # Already running: surface the running instance's dashboard
-                # rather than starting a second one.
-                log.info("already running (pid %s)%s", pid,
-                         "; opening dashboard" if open_dash else "")
-                if open_dash:
-                    try:
-                        webbrowser.open("http://127.0.0.1:8787/")
-                    except Exception:
-                        pass
-                return
+                # A copy that is closing (an update or a restart just ended it)
+                # still shows as alive for a moment: wait for it to answer or to go.
+                end = time.monotonic() + 20
+                while _pid_alive(pid) and not _dashboard_up() and time.monotonic() < end:
+                    time.sleep(1)
+                if _dashboard_up():
+                    # Already running: surface the running instance's dashboard
+                    # rather than starting a second one.
+                    log.info("already running (pid %s)%s", pid,
+                             "; opening dashboard" if open_dash else "")
+                    if open_dash:
+                        try:
+                            webbrowser.open("http://127.0.0.1:8787/")
+                        except Exception:
+                            pass
+                    return
+                if _pid_alive(pid):
+                    log.info("pid %s holds the lock but is not answering; replacing it", pid)
+                    _kill_stale_app_instances()
+                    time.sleep(1.5)
         except Exception:
             pass
     try:
@@ -419,6 +440,15 @@ def main(open_dash: bool = True, takeover: bool = False) -> None:
             lock.unlink()
         except Exception:
             pass
+
+
+def _dashboard_up() -> bool:
+    import urllib.request
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:8787/api/state", timeout=3) as r:
+            return r.status == 200
+    except Exception:
+        return False
 
 
 def _pid_alive(pid: int) -> bool:

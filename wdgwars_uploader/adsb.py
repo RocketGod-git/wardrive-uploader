@@ -368,7 +368,7 @@ def active_source() -> str:
 
 
 def ensure_decoder(cfg: dict[str, Any], driver_ok: bool | None = None,
-                   det: Any = None) -> bool:
+                   det: Any = None, sdr_present: bool | None = None) -> bool:
     """Non-blocking: if configured and the RTL-SDR is on WinUSB, launch an
     installed dump1090 (with backoff) so it starts serving the JSON. Returns
     True if a decoder process is (now) running. Never downloads and never waits
@@ -402,6 +402,10 @@ def ensure_decoder(cfg: dict[str, Any], driver_ok: bool | None = None,
         return True
     if is_running():
         return True
+    # No RTL-SDR plugged in: nothing for dump1090 to open. It is launched again
+    # the moment one shows up.
+    if sdr_present is False:
+        return False
     # Launched regardless of the driver check, which can be flaky: without
     # WinUSB dump1090 exits immediately and the next backoff window retries, so
     # it starts working the moment the driver is fixed. Double-checked under a

@@ -11,13 +11,15 @@ All of it feeds a shared :class:`~wdgwars_uploader.state.LiveState`.
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any
 
 from . import adsb, detect, mayhem, mesh, mesh_capture, prereq, watchdog
-from . import wardrift
+from . import wardrift, wigle
+from .wardrive.service import Wardriver
 from .config import Config, config_dir, device_label
 from .state import LiveState
 from .uploader import WDGWarsClient
@@ -32,6 +34,7 @@ class CycleReport:
     mesh: str = "skipped"
     wardrift: str = "skipped"
     wardrift_mesh: str = "skipped"
+    wardrive: str = "skipped"
     key_ok: bool = False
     aircraft_sent: int = 0
     mesh_sent: int = 0
@@ -39,11 +42,11 @@ class CycleReport:
 
     def line(self) -> str:
         return (f"ADS-B: {self.adsb} | Mesh: {self.mesh} | Wardrift: {self.wardrift}"
-                f" | Wardrift mesh: {self.wardrift_mesh}")
+                f" | Wardrift mesh: {self.wardrift_mesh} | Wardrive: {self.wardrive}")
 
     def as_dict(self) -> dict[str, Any]:
         return {"ts": self.started, "adsb": self.adsb, "mesh": self.mesh,
-                "wardrift": self.wardrift, "wardrift_mesh": self.wardrift_mesh,
+                "wardrift": self.wardrift, "wardrift_mesh": self.wardrift_mesh, "wardrive": self.wardrive,
                 "aircraft_sent": self.aircraft_sent, "mesh_sent": self.mesh_sent,
                 "errors": self.errors}
 
@@ -116,6 +119,9 @@ class UploaderCore:
         self._wardrift_mesh_lock = threading.Lock()   # cycle and radio report share sequence numbers
         self._wardrift_report_error = ""
         self._wd_boards: dict[tuple[str, str], dict] = {}
+        self._wigle_cache: dict[str, tuple[float, dict]] = {}
+        self.wardriver = Wardriver(on_event=self.state.event)
+        self.state.wardrive_snapshot = lambda: self.wardriver.snapshot(self.cfg.as_dict())
 
     def client(self) -> WDGWarsClient:
         return WDGWarsClient(self.cfg.get("api_key", ""),
@@ -152,6 +158,11 @@ class UploaderCore:
             "mayhem_port": c.get("mayhem_port", "auto"),
             "dump1090_gain": c.get("dump1090_gain"),
             "start_on_boot": c.get("start_on_boot", False),
+            "hw_off": list(c.get("hw_off") or []),
+            "gps_net_port": int(c.get("gps_net_port") or 10110),
+            "has_wigle": bool((c.get("wigle_api_name") or "").strip() and (c.get("wigle_api_token") or "").strip()),
+            "wigle_api_name": (c.get("wigle_api_name") or "").strip(),
+            "has_wpasec": bool((c.get("wpasec_key") or "").strip()),
         }
         self.state.interval_hours = int(c.get("interval_hours", 4))
         self.state.wardrift_enabled = bool((c.get("wardrift_api_key") or "").strip())
@@ -191,15 +202,28 @@ class UploaderCore:
         except Exception:
             log.exception("prereq check failed")
         self._push_config_summary()
+        self.apply_wardrive(det)
         return det
+
+    def apply_wardrive(self, det=None) -> None:
+        """Start, stop or reconfigure wardriving to match the settings. Ports that
+        belong to mesh radios or the PortaPack are never opened as a GPS."""
+        det = det or self._last_detect
+        busy = {d.get("port") for d in (self.cfg.get("mesh_devices") or []) if d.get("port")}
+        if det:
+            busy |= {d.port for d in det.serial_ports if d.is_mesh_candidate or d.is_portapack}
+        try:
+            self.wardriver.apply(self.cfg.as_dict(), busy)
+        except Exception:
+            log.exception("wardriving setup failed")
 
     def poll_aircraft(self) -> int:
         if not self.cfg.get("adsb_enabled", True):
             self.state.adsb_source_ok = None
             return 0
         cfg = self.cfg.as_dict()
-        driver_ok = self.state.devices.get("rtlsdr", {}).get("driver_ok")
-        adsb.ensure_decoder(cfg, driver_ok, self._last_detect)   # non-blocking
+        sdr = self.state.devices.get("rtlsdr", {})
+        adsb.ensure_decoder(cfg, sdr.get("driver_ok"), self._last_detect, sdr.get("present"))   # non-blocking
         obj = adsb.collect(cfg)
         if adsb.active_source() == "mayhem":
             st = mayhem.status() or {}
@@ -260,6 +284,7 @@ class UploaderCore:
 
     def refresh_stats(self) -> None:
         self.refresh_wardrift()
+        self.refresh_wigle()
         client = self.client()
         if not self.cfg.get("api_key"):
             return
@@ -272,6 +297,59 @@ class UploaderCore:
         if lb:
             self.state.leaderboard = lb
             self.state.leaderboard_ts = time.time()
+
+    # -- WiGLE stats, boards and upload history ---------------------------------
+    def _wigle_key(self) -> tuple[str, str]:
+        return ((self.cfg.get("wigle_api_name") or "").strip(), (self.cfg.get("wigle_api_token") or "").strip())
+
+    def refresh_wigle(self) -> None:
+        name, token = self._wigle_key()
+        if not (name and token):
+            self.state.wigle = {}
+            return
+        me = wigle.user_stats(name, token)
+        if me.get("ok"):
+            me["race"] = wigle.race("discovered", me.get("rank", 0), name, token)
+            me["race_month"] = wigle.race("monthcount", me.get("month_rank", 0), name, token)
+            me["recent"] = wigle.transactions(name, token, max_rows=6).get("list", [])[:6]
+            self.state.record_wigle_totals(me)
+        if me.get("ok") or not self.state.wigle.get("ok"):
+            self.state.wigle = {**me, "fetched": time.time()}
+
+    def _wigle_cached(self, key: str, ttl: float, fetch) -> dict:
+        hit = self._wigle_cache.get(key)
+        if hit and time.time() - hit[0] < ttl:
+            return hit[1]
+        data = fetch()
+        if data.get("ok") or not hit:
+            self._wigle_cache[key] = (time.time(), {**data, "fetched": time.time()})
+        return self._wigle_cache[key][1]
+
+    def wigle_board(self, kind: str, group_id: str = "") -> dict:
+        """kind: alltime | month | teams | team (with ``group_id``). Boards are
+        public; the key, when set, marks your own row."""
+        name, token = self._wigle_key()
+        me = (self.state.wigle or {}).get("name", "")
+        if kind == "teams":
+            return self._wigle_cached("teams", 600, lambda: wigle.groups(name, token))
+        if kind == "team" and group_id:
+            return self._wigle_cached(f"team:{group_id}", 600, lambda: wigle.group_members(group_id, me, name, token))
+        sort = "monthcount" if kind == "month" else "discovered"
+        return self._wigle_cached(f"board:{sort}", 600, lambda: wigle.standings(sort, 0, 100, name, token))
+
+    def uploads(self, source: str) -> dict:
+        """Upload history for the Uploads section: WiGLE and WDGWars from their own
+        servers, Wardrift from the receipts kept here (it has no key-readable history)."""
+        if source == "wigle":
+            name, token = self._wigle_key()
+            if not (name and token):
+                return {"ok": False, "error": "Add your WiGLE API Name and Token in Settings.", "list": []}
+            return self._wigle_cached("uploads", 30, lambda: wigle.transactions(name, token))
+        if source == "wdgwars":
+            if not (self.cfg.get("api_key") or "").strip():
+                return {"ok": False, "error": "Add your WDGWars API key in Settings.", "list": []}
+            return self._wigle_cached("wdg-uploads", 30, lambda: self.client().upload_history(50))
+        return {"ok": True, "list": self.state.receipts("wardrift")}
 
     # -- the upload cycle --------------------------------------------------
     def run_cycle(self) -> CycleReport:
@@ -324,6 +402,51 @@ class UploaderCore:
         self._wd_boards[(lb["timeframe"], lb["scope"])] = lb
         return lb
 
+    def _upload_wardrive(self, cfg: dict, rep: CycleReport) -> None:
+        """Wi-Fi and Bluetooth rows to every site that has a key."""
+        label = cfg.get("upload_device_label", "")
+        sends = {}
+        name, token = (cfg.get("wigle_api_name") or "").strip(), (cfg.get("wigle_api_token") or "").strip()
+        if name and token:
+            sends["wigle"] = ("WiGLE", lambda gz, fn: wigle.upload(name, token, gz, fn))
+        api_key = (cfg.get("api_key") or "").strip()
+        if api_key:
+            sends["wdgwars"] = ("WDGWars", self.client().upload_wardrive_csv)
+        wd_key = (cfg.get("wardrift_api_key") or "").strip()
+        if wd_key:
+            wc = wardrift.WardriftClient(wd_key, label=label)
+            sends["wardrift"] = ("Wardrift", wc.upload_csv)
+        lines = []
+        for target, (title, send) in sends.items():
+            try:
+                summary = self.wardriver.upload(target, label, send)
+            except Exception as e:  # noqa: BLE001
+                log.exception("wardrive upload to %s failed", title)
+                summary = f"failed: {e}"
+            lines.append(f"{title}: {summary}")
+            if summary != "nothing new":
+                self.state.event(f"Wardrive to {title}: {summary}")
+                if target == "wardrift":
+                    sent = summary.split(" ", 1)[0]
+                    xp = re.search(r"\+([\d.]+) XP", summary)
+                    inf = re.search(r"([\d.]+) influence", summary)
+                    self.state.add_receipt("wardrift", "wifi", "failed" not in summary, summary,
+                                           sent=int(sent) if sent.isdigit() else 0,
+                                           xp=float(xp.group(1)) if xp else 0,
+                                           influence=float(inf.group(1)) if inf else 0)
+            if "failed" in summary:
+                rep.errors.append(f"wardrive {title}: {summary}")
+        wpk = (cfg.get("wpasec_key") or "").strip()
+        if wpk:
+            try:
+                summary = self.wardriver.upload_wpasec(wpk)
+            except Exception as e:  # noqa: BLE001
+                summary = f"failed: {e}"
+            lines.append(f"wpa-sec: {summary}")
+            if summary != "nothing new":
+                self.state.event(f"wpa-sec: {summary}")
+        rep.wardrive = "; ".join(lines) or "no upload site set up"
+
     def _upload_wardrift(self, key: str, rep: CycleReport) -> None:
         """Send aircraft staged for Wardrift (independent of the WDGWars key)."""
         try:
@@ -338,6 +461,8 @@ class UploaderCore:
                 self.state.mark_wardrift_uploaded(res.sent)
                 self.state.add_wardrift_earned(res.credited, res.exp, res.influence, res.currency)
             rep.wardrift = res.summary()
+            self.state.add_receipt("wardrift", "aircraft", not res.error, res.summary(), sent=res.sent,
+                                   credited=res.credited, xp=res.exp, influence=res.influence, currency=res.currency)
             if res.error:
                 rep.errors.append(f"wardrift: {res.error}")
                 self.state.event(("Wardrift upload partial: " if res.sent
@@ -363,6 +488,8 @@ class UploaderCore:
                 res = wardrift.WardriftClient(key, timeout=30.0).upload_mesh(
                     nodes, self.capture.local_radios(), self.wardrift_mesh)
                 rep.wardrift_mesh = res.summary()
+                if not quiet and (res.nodes or res.error):
+                    self.state.add_receipt("wardrift", "mesh", not res.error, res.summary(), sent=res.nodes)
                 if res.error:
                     rep.errors.append(f"wardrift mesh: {res.error}")
                     msg = ("Wardrift mesh partial: " if res.nodes
@@ -399,6 +526,7 @@ class UploaderCore:
             self._upload_wardrift(wd_key, rep)
         if wd_key and cfg.get("mesh_enabled", True):
             self._upload_wardrift_mesh(wd_key, rep)
+        self._upload_wardrive(cfg, rep)
 
         api_key = (cfg.get("api_key") or "").strip()
         if not api_key:

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import threading
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -28,8 +29,18 @@ def _load(name: str, fallback: bytes) -> bytes:
         return fallback
 
 
+def _no_nan(o: Any) -> Any:
+    if isinstance(o, float):
+        return o if math.isfinite(o) else None
+    if isinstance(o, dict):
+        return {k: _no_nan(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [_no_nan(v) for v in o]
+    return o
+
+
 class _Handler(BaseHTTPRequestHandler):
-    server_version = "WDGWarsUploader"
+    server_version = "WardriveUploader"
 
     # Silence default logging to stderr; route it to the app logger at debug.
     def log_message(self, fmt: str, *args: Any) -> None:
@@ -37,7 +48,10 @@ class _Handler(BaseHTTPRequestHandler):
 
     # -- helpers -----------------------------------------------------------
     def _send_json(self, obj: Any, code: int = 200) -> None:
-        body = json.dumps(obj).encode("utf-8")
+        try:
+            body = json.dumps(obj, allow_nan=False).encode("utf-8")
+        except ValueError:      # a NaN/inf would make the whole reply unreadable to the browser
+            body = json.dumps(_no_nan(obj)).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
@@ -134,6 +148,14 @@ class _Handler(BaseHTTPRequestHandler):
             q = urllib.parse.parse_qs(parts.query)
             self._send_json(self.app.core.wardrift_board((q.get("timeframe") or ["all_time"])[0],
                                                          (q.get("scope") or ["global"])[0]))
+        elif path == "/api/phone-gps":
+            self._send_json(self.app.core.wardriver.phone_link())
+        elif path == "/api/wigle/board":
+            q = urllib.parse.parse_qs(parts.query)
+            self._send_json(self.app.core.wigle_board((q.get("kind") or ["alltime"])[0], (q.get("id") or [""])[0]))
+        elif path == "/api/uploads":
+            q = urllib.parse.parse_qs(parts.query)
+            self._send_json(self.app.core.uploads((q.get("src") or ["wigle"])[0]))
         elif path == "/api/geocode":
             q = (urllib.parse.parse_qs(parts.query).get("q") or [""])[0]
             from . import geocode
@@ -169,6 +191,12 @@ class _Handler(BaseHTTPRequestHandler):
             elif path == "/api/config":
                 self.app.update_config(body)
                 self._send_json({"ok": True, "config": self.app.core.state.config_summary})
+            elif path == "/api/wigle/test":
+                from . import wigle
+                name = (body.get("name") or self.app.cfg.get("wigle_api_name") or "").strip()
+                token = (body.get("token") or self.app.cfg.get("wigle_api_token") or "").strip()
+                ok, msg = wigle.verify(name, token)
+                self._send_json({"ok": ok, "username": msg if ok else "", "error": "" if ok else msg})
             elif path == "/api/update/check":
                 self._send_json(self.app.updater.check())
             elif path == "/api/update/install":

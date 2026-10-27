@@ -1,13 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- MSI installer for the WDGWars Uploader. Wraps the self-contained PyInstaller
-     exe (built to dist/WDGWarsUploader.exe). Build with build_msi.ps1.
-     candle -arch x64 -dExeSrc=<path-to-exe> installer\Product.wxs; light ... -->
-<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-  <Product Id="*" Name="WDGWars Uploader" Language="1033" Version="$(var.ProductVersion)"
+<!-- MSI installer for Wardrive Uploader. Wraps the self-contained PyInstaller
+     exe (built to dist/WardriveUploader.exe). Build with build_msi.ps1.
+     candle -arch x64 -ext WixFirewallExtension -dExeSrc=<path-to-exe> installer\Product.wxs; light ... -->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi"
+     xmlns:fire="http://schemas.microsoft.com/wix/FirewallExtension">
+  <Product Id="*" Name="Wardrive Uploader" Language="1033" Version="$(var.ProductVersion)"
            Manufacturer="RocketGod" UpgradeCode="E7F3C9A2-4B6D-4E1F-9C3A-2D5B8F1A6C40">
     <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" Platform="x64"
-             Description="WDGWars ADS-B + Mesh live uploader" />
-    <MajorUpgrade DowngradeErrorMessage="A newer version of WDGWars Uploader is already installed." />
+             Description="Wardrive Uploader: Wi-Fi, Bluetooth, ADS-B and mesh to WiGLE, WDGWars and Wardrift" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Wardrive Uploader is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
     <Icon Id="AppIcon" SourceFile="$(var.ExeSrc)" />
@@ -17,38 +18,69 @@
 
     <Directory Id="TARGETDIR" Name="SourceDir">
       <Directory Id="ProgramFiles64Folder">
-        <Directory Id="INSTALLFOLDER" Name="WDGWars Uploader" />
+        <Directory Id="INSTALLFOLDER" Name="Wardrive Uploader" />
       </Directory>
       <Directory Id="ProgramMenuFolder">
-        <Directory Id="ProgramMenuDir" Name="WDGWars Uploader" />
+        <Directory Id="ProgramMenuDir" Name="Wardrive Uploader" />
       </Directory>
       <Directory Id="DesktopFolder" />
     </Directory>
 
     <DirectoryRef Id="INSTALLFOLDER">
       <Component Id="MainExe" Guid="*" Win64="yes">
-        <File Id="WDGWarsUploaderExe" Name="WDGWarsUploader.exe" Source="$(var.ExeSrc)" KeyPath="yes">
-          <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuDir" Name="WDGWars Uploader"
-                    Description="WDGWars ADS-B + Mesh Uploader" WorkingDirectory="INSTALLFOLDER"
+        <File Id="WardriveUploaderExe" Name="WardriveUploader.exe" Source="$(var.ExeSrc)" KeyPath="yes">
+          <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuDir" Name="Wardrive Uploader"
+                    Description="Wardrive Uploader" WorkingDirectory="INSTALLFOLDER"
                     Icon="AppIcon" Advertise="yes" />
-          <Shortcut Id="DesktopShortcut" Directory="DesktopFolder" Name="WDGWars Uploader"
-                    Description="WDGWars ADS-B + Mesh Uploader" WorkingDirectory="INSTALLFOLDER"
+          <Shortcut Id="DesktopShortcut" Directory="DesktopFolder" Name="Wardrive Uploader"
+                    Description="Wardrive Uploader" WorkingDirectory="INSTALLFOLDER"
                     Icon="AppIcon" Advertise="yes" />
         </File>
+      </Component>
+    </DirectoryRef>
+
+    <!-- Phone GPS: the phone page (TCP 10111) and NMEA from GPS apps (TCP and UDP 10110),
+         open to the local network only, whichever copy of the app is running. -->
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="PhoneGpsFirewall" Guid="8C41F0A2-6E37-4B95-A1D8-2F6E9C3B7D14" Win64="yes">
+        <RegistryValue Root="HKLM" Key="Software\RocketGod\WardriveUploader" Name="phone_gps_firewall"
+                       Type="integer" Value="1" KeyPath="yes" />
+        <fire:FirewallException Id="PhoneGpsPage" Name="Wardrive Uploader phone GPS page" Port="10111"
+                                Protocol="tcp" Scope="localSubnet" Profile="all" />
+        <fire:FirewallException Id="PhoneGpsNmeaTcp" Name="Wardrive Uploader phone GPS NMEA (TCP)" Port="10110"
+                                Protocol="tcp" Scope="localSubnet" Profile="all" />
+        <fire:FirewallException Id="PhoneGpsNmeaUdp" Name="Wardrive Uploader phone GPS NMEA (UDP)" Port="10110"
+                                Protocol="udp" Scope="localSubnet" Profile="all" />
       </Component>
     </DirectoryRef>
 
     <DirectoryRef Id="ProgramMenuDir">
       <Component Id="ProgramMenuDirComponent" Guid="*" Win64="yes">
         <RemoveFolder Id="RemoveProgramMenuDir" On="uninstall" />
-        <RegistryValue Root="HKCU" Key="Software\RocketGod\WDGWarsUploader" Name="installed"
+        <RegistryValue Root="HKCU" Key="Software\RocketGod\WardriveUploader" Name="installed"
                        Type="integer" Value="1" KeyPath="yes" />
+        <!-- Builds from before the rename started with Windows under the old name. -->
+        <RemoveRegistryValue Root="HKCU" Key="Software\Microsoft\Windows\CurrentVersion\Run" Name="WDGWarsUploader" />
       </Component>
     </DirectoryRef>
 
-    <Feature Id="Main" Title="WDGWars Uploader" Level="1">
+    <Feature Id="Main" Title="Wardrive Uploader" Level="1">
       <ComponentRef Id="MainExe" />
       <ComponentRef Id="ProgramMenuDirComponent" />
+      <ComponentRef Id="PhoneGpsFirewall" />
     </Feature>
+
+    <!-- Start the app when the install finishes. Explorer starts it, so it runs as the
+         signed-in user rather than with the installer's admin rights. -->
+    <CustomAction Id="LaunchApp" Directory="INSTALLFOLDER" Return="asyncNoWait" Impersonate="yes"
+                  ExeCommand="&quot;[WindowsFolder]explorer.exe&quot; &quot;[INSTALLFOLDER]WardriveUploader.exe&quot;" />
+    <!-- An ADS-B decoder left running by an earlier copy keeps the data folder and the
+         RTL-SDR busy; the installer has admin rights, so it can always stop it. -->
+    <CustomAction Id="StopDecoder" Directory="TARGETDIR" Execute="deferred" Impersonate="no" Return="ignore"
+                  ExeCommand="&quot;[SystemFolder]taskkill.exe&quot; /F /IM dump1090.exe" />
+    <InstallExecuteSequence>
+      <Custom Action="StopDecoder" Before="InstallFiles" />
+      <Custom Action="LaunchApp" After="InstallFinalize">NOT (REMOVE~="ALL")</Custom>
+    </InstallExecuteSequence>
   </Product>
 </Wix>

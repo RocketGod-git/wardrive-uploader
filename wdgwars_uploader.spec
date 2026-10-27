@@ -1,4 +1,4 @@
-# PyInstaller spec — build a single windowed WDGWarsUploader.exe
+# PyInstaller spec — build a single windowed WardriveUploader.exe
 #   pyinstaller wdgwars_uploader.spec
 from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 
@@ -11,8 +11,11 @@ hiddenimports = [
 ]
 hiddenimports += collect_submodules("meshcore")
 hiddenimports += collect_submodules("serial")
+hiddenimports += collect_submodules("wdgwars_uploader.wardrive")
+# Monitor-mode adapters: libusb through python-libusb1, which ships libusb-1.0.dll.
+hiddenimports += collect_submodules("usb1")
 # meshcore's deps: BLE backend (bleak, dynamic winrt import) + Cayenne LPP.
-for _dep in ("bleak", "bleak.backends.winrt", "cayennelpp"):
+for _dep in ("bleak", "bleak.backends.winrt", "cayennelpp", "winrt.windows.devices.geolocation"):
     try:
         hiddenimports += collect_submodules(_dep)
     except Exception:
@@ -23,7 +26,9 @@ datas = collect_data_files("meshcore")
 datas += [
     ("wdgwars_uploader/webui/dashboard.html", "wdgwars_uploader/webui"),
     ("wdgwars_uploader/webui/map.html", "wdgwars_uploader/webui"),
+    ("wdgwars_uploader/webui/phone.html", "wdgwars_uploader/webui"),
     ("wdgwars_uploader/webui/static", "wdgwars_uploader/webui/static"),
+    ("wdgwars_uploader/wardrive/firmware", "wdgwars_uploader/wardrive/firmware"),
 ]
 
 # Optional native-window backend: only bundle if pywebview is installed.
@@ -67,7 +72,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name="WDGWarsUploader",
+    name="WardriveUploader",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

@@ -72,6 +72,7 @@ class LiveState:
         # Dashboard history: WDGWars totals per day (for the trend graph) and the
         # Wardrift credits this uploader earned per UTC day (from upload receipts).
         self.wdgwars_days: dict[str, dict] = {}
+        self.wigle_days: dict[str, dict] = {}
         self.wardrift_days: dict[str, dict] = {}
         self._load_history()
         self.wardrift: dict[str, Any] = {"session": "signed_out", "account": {},
@@ -103,10 +104,13 @@ class LiveState:
         self.stats_ts: float = 0.0
         self.leaderboard: dict[str, Any] = {}
         self.leaderboard_ts: float = 0.0
+        self.wigle: dict[str, Any] = {}       # WiGLE /stats/user for the YOU card
+        self._receipts: dict[str, list[dict[str, Any]]] = {}
 
         # Prerequisites
         self.prereqs: dict[str, Any] = {}
         self.update_status: dict[str, Any] = {}
+        self.wardrive_snapshot = None   # set by the core; returns the wardriving panel
 
         # Config summary (never contains the key itself)
         self.config_summary: dict[str, Any] = {}
@@ -357,6 +361,7 @@ class LiveState:
         try:
             data = json.loads(self._history_path().read_text(encoding="utf-8"))
             self.wdgwars_days = {k: v for k, v in (data.get("wdgwars") or {}).items() if isinstance(v, dict)}
+            self.wigle_days = {k: v for k, v in (data.get("wigle") or {}).items() if isinstance(v, dict)}
             self.wardrift_days = {k: v for k, v in (data.get("wardrift") or {}).items() if isinstance(v, dict)}
         except (OSError, ValueError, AttributeError):
             pass
@@ -364,10 +369,11 @@ class LiveState:
     def _save_history(self) -> None:
         cutoff = time.strftime("%Y-%m-%d", time.gmtime(time.time() - 120 * 86400))
         with self._lock:
-            for d in (self.wdgwars_days, self.wardrift_days):
+            for d in (self.wdgwars_days, self.wardrift_days, self.wigle_days):
                 for k in [k for k in d if k < cutoff]:
                     d.pop(k, None)
-            payload = json.dumps({"wdgwars": self.wdgwars_days, "wardrift": self.wardrift_days})
+            payload = json.dumps({"wdgwars": self.wdgwars_days, "wardrift": self.wardrift_days,
+                                  "wigle": self.wigle_days})
         try:
             path = self._history_path()
             fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
@@ -387,6 +393,16 @@ class LiveState:
             self.wdgwars_days[day] = row
         self._save_history()
 
+    def record_wigle_totals(self, me: dict) -> None:
+        """Keep the latest WiGLE totals for each local day."""
+        day = time.strftime("%Y-%m-%d")
+        row = {k: int(me.get(k) or 0) for k in ("wifi_gps", "bt", "cell", "rank")}
+        with self._lock:
+            if self.wigle_days.get(day) == row:
+                return
+            self.wigle_days[day] = row
+        self._save_history()
+
     def add_wardrift_earned(self, aircraft: int, xp: int, influence: int, currency: int) -> None:
         """Add one upload receipt's credits to today's (UTC) tally."""
         day = time.strftime("%Y-%m-%d", time.gmtime())
@@ -403,6 +419,10 @@ class LiveState:
 
     # -- snapshot for the API ---------------------------------------------
     def snapshot(self) -> dict[str, Any]:
+        try:
+            wardrive = self.wardrive_snapshot() if self.wardrive_snapshot else {}
+        except Exception:   # never let the wardriving panel break the dashboard
+            wardrive = {}
         with self._lock:
             mt_live = [n for n in self._mesh_live if n.get("network") == "meshtastic"]
             mc_live = [n for n in self._mesh_live if n.get("network") == "meshcore"]
@@ -445,14 +465,52 @@ class LiveState:
                 "stats_ts": self.stats_ts,
                 "leaderboard": self.leaderboard,
                 "wdgwars_days": dict(sorted(self.wdgwars_days.items())[-30:]),
+                "wigle_days": dict(sorted(self.wigle_days.items())[-30:]),
                 "wardrift": {**self.wardrift,
                              "days": dict(sorted(self.wardrift_days.items())[-30:]),
                              "earned_total": {k: sum(int(d.get(k) or 0) for d in self.wardrift_days.values())
                                               for k in ("aircraft", "xp", "influence", "currency")}},
                 "leaderboard_ts": self.leaderboard_ts,
+                "wigle": self.wigle,
                 "prereqs": self.prereqs,
                 "update": self.update_status,
+                "wardrive": wardrive,
                 "config": self.config_summary,
                 "serial_ports": self.serial_ports,
                 "events": list(self._events)[:100],
             }
+
+
+    # -- upload receipts (sites without a readable upload history) -------------
+    def _receipts_file(self, site: str):
+        return config_dir() / f"receipts_{site}.jsonl"
+
+    def add_receipt(self, site: str, kind: str, ok: bool, summary: str, **nums: Any) -> None:
+        rec = {"t": round(time.time(), 1), "kind": kind, "ok": bool(ok), "summary": summary,
+               **{k: v for k, v in nums.items() if v}}
+        with self._lock:
+            self.receipts(site)            # load what is on disk first
+            self._receipts[site].append(rec)
+            del self._receipts[site][:-500]
+        try:
+            with open(self._receipts_file(site), "a", encoding="utf-8") as f:
+                f.write(json.dumps(rec) + "\n")
+        except OSError:
+            pass
+
+    def receipts(self, site: str) -> list[dict[str, Any]]:
+        """Newest first, up to 500."""
+        with self._lock:
+            if site not in self._receipts:
+                rows: list[dict[str, Any]] = []
+                try:
+                    with open(self._receipts_file(site), encoding="utf-8") as f:
+                        for line in f:
+                            try:
+                                rows.append(json.loads(line))
+                            except ValueError:
+                                pass
+                except OSError:
+                    pass
+                self._receipts[site] = rows[-500:]
+            return list(reversed(self._receipts[site]))

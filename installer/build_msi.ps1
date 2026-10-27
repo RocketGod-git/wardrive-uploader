@@ -1,4 +1,4 @@
-# Build the WDGWars Uploader MSI.
+# Build the Wardrive Uploader MSI.
 # 1) rebuilds the self-contained exe (PyInstaller), 2) wraps it in an MSI via WiX v3.
 # Requires WiX v3 (candle.exe/light.exe) either on PATH, in %WIX%\bin, or passed via -WixDir.
 param([string]$WixDir = "")
@@ -8,7 +8,7 @@ $root = Split-Path $PSScriptRoot -Parent            # repo root (this script liv
 
 Write-Host "== building exe =="
 & "$root\.venv\Scripts\python.exe" -m PyInstaller --noconfirm "$root\wdgwars_uploader.spec"
-$exe = Join-Path $root "dist\WDGWarsUploader.exe"
+$exe = Join-Path $root "dist\WardriveUploader.exe"
 if (-not (Test-Path $exe)) { throw "exe not found at $exe" }
 
 # locate WiX v3
@@ -28,9 +28,9 @@ $ver = [regex]::Match($verSrc, '__version__\s*=\s*"([^"]+)"').Groups[1].Value
 if (-not $ver) { throw "could not read __version__ from wdgwars_uploader/__init__.py" }
 Write-Host "== version $ver =="
 $obj = Join-Path $root "dist\Product.wixobj"
-$msi = Join-Path $root "dist\WDGWarsUploader-$ver.msi"
+$msi = Join-Path $root "dist\WardriveUploader-$ver.msi"
 Write-Host "== candle =="
-& $candle -nologo -arch x64 -dExeSrc="$exe" -dProductVersion="$ver" -out $obj (Join-Path $PSScriptRoot "Product.wxs")
+& $candle -nologo -arch x64 -ext WixFirewallExtension -dExeSrc="$exe" -dProductVersion="$ver" -out $obj (Join-Path $PSScriptRoot "Product.wxs")
 Write-Host "== light =="
-& $light -nologo -sval -out $msi $obj
+& $light -nologo -sval -ext WixFirewallExtension -out $msi $obj
 Write-Host "Built: $msi"

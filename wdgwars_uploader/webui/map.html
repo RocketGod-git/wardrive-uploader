@@ -119,7 +119,10 @@ if (webgl && L.maplibreGL) {
 const acLayer = L.layerGroup().addTo(map);
 const mtLayer = L.layerGroup().addTo(map);
 const mcLayer = L.layerGroup().addTo(map);
-L.control.layers(null, {'✈ Aircraft':acLayer, '📡 Meshtastic':mtLayer, '🌐 MeshCore':mcLayer},
+const wvLayer = L.layerGroup().addTo(map);
+const wvTrail = L.polyline([], {color:'#ffe200', weight:3, opacity:.85}).addTo(wvLayer);
+let wvHere = null;
+L.control.layers(null, {'✈ Aircraft':acLayer, '📡 Meshtastic':mtLayer, '🌐 MeshCore':mcLayer, '🚗 Wardrive':wvLayer},
   {collapsed:false, position:'topright'}).addTo(map);
 
 const acMarkers = {}, meshMarkers = {};
@@ -221,11 +224,20 @@ async function tick(){
       mk.on('popupopen',()=>loadAcInfo(mk._a)); mk.addTo(acLayer); acMarkers[a.hex]=mk; } }
   for(const h in acMarkers){ if(!liveAc.has(h)){ acLayer.removeLayer(acMarkers[h]); delete acMarkers[h]; } }
 
+  const wv = s.wardrive || {};
+  wvTrail.setLatLngs((wv.enabled && wv.trail) || []);
+  const fx = wv.enabled && wv.gps && wv.gps.fix;
+  if (fx) { const ll = [fx.lat, fx.lon];
+    if (wvHere) wvHere.setLatLng(ll);
+    else wvHere = L.circleMarker(ll, {radius:7, color:'#ffe200', weight:2, fillColor:'#ffe200', fillOpacity:.6}).addTo(wvLayer); }
+  else if (wvHere) { wvLayer.removeLayer(wvHere); wvHere = null; }
+
   const liveMt = renderMesh(mt, mtLayer, 'meshtastic');
   const liveMc = renderMesh(mc, mcLayer, 'meshcore');
   for(const id in meshMarkers){ if(!liveMt.has(id) && !liveMc.has(id)){
     meshMarkers[id]._layer.removeLayer(meshMarkers[id]); delete meshMarkers[id]; } }
 
+  if(!fitted && fx && !ac.length && !mt.length && !mc.length){ map.setView([fx.lat, fx.lon], 15, {animate:false}); fitted=true; repaintSoon(); }
   if(!fitted){ const pts=[...ac.map(a=>[a.lat,a.lon]),...mt.map(m=>[m.lat,m.lon]),...mc.map(m=>[m.lat,m.lon])];
     // No animation for the one-time auto-fit: there is nothing to animate from,
     // and it keeps the first view off the zoom-animation path entirely.

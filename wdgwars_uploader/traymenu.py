@@ -315,7 +315,8 @@ class TrayPopup:
         st = tk.Frame(body, bg=BG)
         st.pack(fill="x", padx=self._px(14), pady=(self._px(10), self._px(4)))
         st.columnconfigure(1, weight=1)
-        for i, key in enumerate(("adsb", "mesh", "queue", "next")):
+        keys = ("adsb", "mesh") + (("wardrive",) if m.get("wardrive") else ()) + ("queue", "next")
+        for i, key in enumerate(keys):
             dot = tk.Canvas(st, width=self._px(9), height=self._px(9), bg=BG, highlightthickness=0)
             dot.grid(row=i, column=0, sticky="w", pady=self._px(2))
             oval = dot.create_oval(1, 1, self._px(8), self._px(8), fill=MUTED, outline="")

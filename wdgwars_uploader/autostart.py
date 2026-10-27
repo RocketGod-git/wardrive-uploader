@@ -14,7 +14,8 @@ import sys
 from pathlib import Path
 
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
-VALUE_NAME = "WDGWarsUploader"
+VALUE_NAME = "WardriveUploader"
+OLD_NAME = "WDGWarsUploader"          # before the rename; cleaned up on start
 _NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
 log = logging.getLogger("wdgwars.autostart")
@@ -22,7 +23,7 @@ log = logging.getLogger("wdgwars.autostart")
 
 def _startup_shortcut() -> Path:
     base = os.environ.get("APPDATA") or str(Path.home())
-    return Path(base) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup" / "WDGWarsUploader.lnk"
+    return Path(base) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup" / "WardriveUploader.lnk"
 
 
 def _sync_startup_shortcut(enable: bool) -> None:
@@ -86,9 +87,33 @@ def _run_target() -> tuple[str, str, str] | None:
 def _local_exe() -> Path:
     """A stable LOCAL (never OneDrive) home for the autostart exe copy."""
     base = os.environ.get("LOCALAPPDATA") or str(Path.home())
-    d = Path(base) / "WDGWarsUploader"
+    d = Path(base) / "WardriveUploader"
     d.mkdir(parents=True, exist_ok=True)
-    return d / "WDGWarsUploader.exe"
+    return d / "WardriveUploader.exe"
+
+
+def remove_old_name() -> None:
+    """Remove what builds from before the rename left for starting with Windows:
+    the Run value, the Startup shortcut and the local exe copy, so the old
+    version can never start again."""
+    if sys.platform != "win32":
+        return
+    import winreg
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
+            winreg.DeleteValue(k, OLD_NAME)
+        log.info("removed the old auto-start entry")
+    except OSError:
+        pass
+    base = os.environ.get("APPDATA") or str(Path.home())
+    lnk = Path(base) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup" / f"{OLD_NAME}.lnk"
+    try:
+        lnk.unlink()
+    except OSError:
+        pass
+    old = Path(os.environ.get("LOCALAPPDATA") or str(Path.home())) / OLD_NAME
+    if old.is_dir():
+        shutil.rmtree(old, ignore_errors=True)
 
 
 def ensure_local_copy() -> Path | None:
@@ -170,6 +195,7 @@ def disable() -> None:
 
 
 def sync(desired: bool) -> None:
+    remove_old_name()
     # enable() overwrites the value, so calling it when desired keeps the
     # registered command current (e.g. picks up the --boot flag).
     if desired:

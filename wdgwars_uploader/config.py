@@ -1,6 +1,6 @@
 """Configuration storage.
 
-Config lives in ``%APPDATA%\\WDGWarsUploader\\config.json``. The API keys are the
+Config lives in ``%APPDATA%\\WardriveUploader\\config.json``. The API keys are the
 only secrets; they are stored in plain text in the roaming profile, at the same trust
 level as the rest of the account, and is never returned by the dashboard API.
 """
@@ -25,6 +25,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "wardrift_session": "",          # set by Wardrift sign-in; the password is never stored
     "wardrift_session_expires": "",
     "wardrift_username": "",
+    # Wi-Fi + Bluetooth wardriving: every adapter, Bluetooth radio and location
+    # source found is used, except the ones switched off here by id
+    # ("wifi:<adapter>", "mon:<usb port>", "bt", "gps:windows", "gps:phone", "gps:serial:<COM>").
+    "hw_off": [],
+    "gps_net_port": 10110,       # NMEA from a phone, TCP or UDP
+    "wigle_api_name": "",
+    "wigle_api_token": "",
+    "wpasec_key": "",            # wpa-sec.stanev.org account key; captures upload when set
     "wardrift_api_key": "",   # optional; aircraft and mesh nodes also go to wardrift.net
     # Name of this PC in uploaded file names, so uploads from several machines
     # can be told apart. Blank = the computer name.
@@ -105,14 +113,54 @@ def device_label(custom: Any = "") -> str:
 
 
 def upload_file_name(label: str, name: str) -> str:
-    """``aircraft.json.gz`` -> ``WDGWarsUploader-<label>-aircraft.json.gz``."""
-    return f"WDGWarsUploader-{device_label(label)}-{name}"
+    """``aircraft.json.gz`` -> ``WardriveUploader-<label>-aircraft.json.gz``."""
+    return f"WardriveUploader-{device_label(label)}-{name}"
+
+
+_DIR: Path | None = None
+MOVE_ERROR = ""            # why the old data folder could not be moved, for the log
+
+
+def _stop_programs_in(folder: Path) -> None:
+    if os.name != "nt":
+        return
+    import subprocess
+    import time
+    ps = ("Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and "
+          "$_.ExecutablePath.StartsWith($env:WU_DIR, 'OrdinalIgnoreCase') } | "
+          "ForEach-Object { Stop-Process -Id $_.ProcessId -Force }")
+    try:
+        subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps], timeout=20,
+                       capture_output=True, env={**os.environ, "WU_DIR": str(folder) + os.sep},
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        time.sleep(1)
+    except Exception:
+        pass
 
 
 def config_dir() -> Path:
-    base = os.environ.get("APPDATA") or str(Path.home())
-    d = Path(base) / "WDGWarsUploader"
+    """%APPDATA%\\WardriveUploader. Builds from before the rename kept everything
+    in %APPDATA%\\WDGWarsUploader; that folder is moved over the first time. If
+    something still holds a file in it, the old folder keeps being used."""
+    global _DIR, MOVE_ERROR
+    if _DIR is not None:
+        return _DIR
+    base = Path(os.environ.get("APPDATA") or str(Path.home()))
+    d, old = base / "WardriveUploader", base / "WDGWarsUploader"
+    if old.is_dir() and not d.exists():
+        try:
+            old.rename(d)
+        except OSError:
+            # Usually the ADS-B decoder the old build started, still running from
+            # its tools folder. Stop whatever runs from in there and try again.
+            _stop_programs_in(old)
+            try:
+                old.rename(d)
+            except OSError as e:
+                MOVE_ERROR = f"kept using {old}: could not move it ({e})"
+                d = old
     d.mkdir(parents=True, exist_ok=True)
+    _DIR = d
     return d
 
 
