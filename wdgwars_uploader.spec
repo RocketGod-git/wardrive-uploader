@@ -19,15 +19,6 @@ for _dep in ("bleak", "bleak.backends.winrt", "cayennelpp"):
         pass
 
 datas = collect_data_files("meshcore")
-
-# WardriveESP flasher: esptool (its targets load dynamically, and the stub flasher
-# images are JSON data files), pyusb + libusb for C5 boards bound to WinUSB, and the
-# pyserial URL handler that pyserial imports by name.
-hiddenimports += collect_submodules("esptool")
-hiddenimports += collect_submodules("usb")
-hiddenimports += ["libusb_package", "wdgwars_uploader.flasher.protocol_usbjtag"]
-datas += collect_data_files("esptool")
-datas += collect_data_files("libusb_package", include_py_files=False)
 # the dashboard + map HTML served by the local server
 datas += [
     ("wdgwars_uploader/webui/dashboard.html", "wdgwars_uploader/webui"),

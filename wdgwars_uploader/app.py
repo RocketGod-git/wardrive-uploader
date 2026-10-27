@@ -26,7 +26,6 @@ from PIL import Image, ImageDraw
 from . import APP_NAME, __version__, adsb, autostart, mayhem, traymenu, updater, watchdog
 from .config import Config, INTERVAL_CHOICES_HOURS, config_dir
 from .core import UploaderCore
-from .flasher import FlasherService
 from .logutil import setup_logging
 from .poller import Poller
 from .scheduler import Scheduler
@@ -58,8 +57,6 @@ class UploaderApp:
         self.poller = Poller(self.core)
         self.server = DashboardServer(self)
         self.updater = updater.Updater(on_quit=self.quit, on_event=self.state.event)
-        self.flasher = FlasherService(port_guard=self.core.capture, ports_in_use=self.core.ports_in_use,
-                                      on_event=self.state.event)
         self.state.update_status = self.updater.status
         self._icon: pystray.Icon | None = None
         self._stop = threading.Event()
@@ -322,7 +319,7 @@ class UploaderApp:
             self.state.save_collected(force=True)
         except Exception:
             pass
-        for stopper in (self.flasher.stop, self.scheduler.stop, self.poller.stop, self.core.capture.stop,
+        for stopper in (self.scheduler.stop, self.poller.stop, self.core.capture.stop,
                         self.server.stop, adsb.stop_dump1090, mayhem.stop):
             try:
                 stopper()

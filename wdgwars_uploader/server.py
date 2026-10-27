@@ -128,8 +128,6 @@ class _Handler(BaseHTTPRequestHandler):
             cs = (q.get("cs") or [""])[0]
             from . import enrich
             self._send_json(enrich.full(hex_id, cs))
-        elif path == "/api/flasher":
-            self._send_json(self.app.flasher.state())
         elif path.startswith("/static/"):
             self._send_static(path[len("/static/"):])
         elif path == "/api/wardrift/leaderboard":
@@ -204,18 +202,6 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send_json({"ok": True})
             elif path == "/api/install-dump1090":
                 self.app.install_dump1090_async()
-                self._send_json({"ok": True})
-            elif path == "/api/flasher/scan":
-                self.app.flasher.rescan()
-                self._send_json({"ok": True})
-            elif path == "/api/flasher/flash":
-                self._send_json(self.app.flasher.flash(str(body.get("id") or ""), bool(body.get("confirm"))))
-            elif path == "/api/flasher/identify":
-                self._send_json(self.app.flasher.identify(str(body.get("id") or "")))
-            elif path == "/api/flasher/retry":
-                self._send_json(self.app.flasher.retry())
-            elif path == "/api/flasher/dismiss":
-                self.app.flasher.dismiss()
                 self._send_json({"ok": True})
             elif path == "/api/quit":
                 self._send_json({"ok": True})

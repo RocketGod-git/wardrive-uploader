@@ -13,7 +13,6 @@ It runs in the tray, watches whatever radios are plugged in, and uploads on a sc
 - **Wardrift** (optional): aircraft and mesh nodes can also be sent to [Wardrift](https://wardrift.net) with a character API key, along with the battery, uptime and packet counters of each connected mesh radio. Signing in shows your character, rank and the Wardrift leaderboards.
 - **Dashboard** on loopback: live feed, counters, a map, stats and leaderboards for both games, and the prerequisite checks.
 - **Radio position**: set a fixed spot for radios without GPS, by address or on the map, exact or coarse.
-- **WardriveESP flasher**: plug in an ESP32-C3, C5, C6 or S3 and flash [WardriveESP](https://rocketgod.dev/WardriveESP/) with one click. A Biscuit Pro or Ultra shows up as one device, and one click flashes both chips: WardriveESP on the C5 and the co-processor on the second ESP32, which brings back the battery level and adds a second radio. It reads what each board runs first, warns before it erases mesh firmware, pauses the uploader's own use of the port, checks every write and asks the board what it runs afterward. On Android, flash from the Wardrive Go app instead.
 - **Tray menu** with live status, ranks and quick actions.
 - **Updates**: checks for a new release on start and every 6 hours. One click downloads it, verifies the checksum and installs it.
 

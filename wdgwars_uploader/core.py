@@ -258,16 +258,6 @@ class UploaderCore:
                                  contacts=len(nodes), devices=status)
         return len(nodes)
 
-    def ports_in_use(self) -> dict[str, str]:
-        """Serial ports this app holds open right now, for the WardriveESP flasher."""
-        out: dict[str, str] = {}
-        for s in self.capture.status():
-            port = s.get("port") or ""
-            if port and port.lower() != "auto":
-                proto = "Meshtastic" if s.get("protocol") == "meshtastic" else "MeshCore"
-                out[port] = f"{proto} radio"
-        return out
-
     def refresh_stats(self) -> None:
         self.refresh_wardrift()
         client = self.client()
