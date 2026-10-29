@@ -246,8 +246,9 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
 .field input{width:100%}
 .switch{display:flex;align-items:center;gap:8px;font-size:12px}
 .field .switch input{width:auto;flex:none}
-.devrow{display:flex;gap:8px;align-items:center;margin-bottom:6px}
-.devrow .d-port{min-width:200px;max-width:320px;flex:1}
+.devrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+.devrow .d-port,.devrow .d-ble{min-width:150px;max-width:320px;flex:1}
+.devrow .d-proto,.devrow .d-transport{max-width:145px}
 .devrow .d-rm{padding:5px 10px}
 .msg{font-size:12px;margin-left:8px}
 .msg.ok{color:var(--green)} .msg.err{color:var(--red)}
@@ -718,7 +719,7 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
             <div class="field">
               <label for="f-wdkey">Upload key</label>
               <input type="password" id="f-wdkey" placeholder="optional — paste wdk_ key…" autocomplete="off">
-              <span class="hint">Sends your aircraft and mesh radios to Wardrift for XP and influence. <a href="https://wardrift.net" target="_blank" rel="noopener">wardrift.net ↗</a></span>
+              <span class="hint">Sends your aircraft, mesh radios and health to Wardrift. <a href="https://wardrift.net" target="_blank" rel="noopener">wardrift.net ↗</a></span>
             </div>
             <hr>
             <div class="field">
@@ -776,12 +777,12 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
           </div>
         </section>
         <section class="sgroup">
-          <div class="sgh"><span class="ic">◆</span><div><b>Mesh radios</b><span class="sub2">COM ports, discovery and reach</span></div></div>
+          <div class="sgh"><span class="ic">◆</span><div><b>Mesh radios</b><span class="sub2">USB / BLE, discovery and reach</span></div></div>
           <div class="field">
             <label>Radios</label>
             <div id="mesh-devs"></div>
             <button class="btn ghost" id="btn-adddev" type="button" style="padding:6px 12px">+ Add radio</button>
-            <span class="hint">Pick each radio's COM port (◆ = likely mesh board). Every enabled radio is read and uploaded.</span>
+            <span class="hint">Choose USB serial or BLE for each radio (◆ = likely mesh board). BLE needs an address or device UUID.</span>
           </div>
           <div class="two">
             <div class="field">
@@ -797,7 +798,7 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
           </div>
         </section>
         <section class="sgroup wide">
-          <div class="sgh"><span class="ic">📍</span><div><b>Radio position</b><span class="sub2">Wardrift only gives influence to radios that share a location, and most radios have no GPS</span></div></div>
+          <div class="sgh"><span class="ic">📍</span><div><b>Radio position</b><span class="sub2">Advertised position for discovery; Wardrift health does not require GPS.</span></div></div>
           <div id="pos-radios"></div>
           <div class="field">
             <label for="f-pos-q">Find a spot</label>
@@ -928,7 +929,7 @@ function render(s){
     : protos.map(p=>NAME[p]||p).join(' + ');
   let mtxt;
   if(mdevs.length){
-    mtxt = mdevs.map(d=>`${d.port} ${d.protocol==='meshtastic'?'MT':'MC'} ${d.connected?d.contacts:'✗'}${d.connected&&!d.position?' ⚠ no position':''}`).join(' · ');
+    mtxt = mdevs.map(d=>`${d.transport==='ble'?'BLE '+(d.ble_address||''):d.port} ${d.protocol==='meshtastic'?'MT':'MC'} ${d.connected?d.contacts:'✗'}${d.connected&&!d.position?' ⚠ no position':''}`).join(' · ');
   } else if(mesh.present){ mtxt = anyConn?`${mesh.contacts||0} nodes`:'not responding'; }
   else { mtxt = 'not detected'; }
   $("#d-mesh-t").textContent = mtxt;
@@ -955,8 +956,10 @@ function render(s){
   $("#s-air").textContent = (s.pending.aircraft||0)+" to send";
   $("#s-mesh").textContent = (s.pending.mesh||0)+" to send";
   // Last Wardrift mesh result (nodes + local radio telemetry), when a key is set.
-  const wdm=(s.last_cycle||{}).wardrift_mesh;
-  const wdmTxt=((s.config||{}).has_wardrift_key && wdm && wdm!=="skipped") ? "Wardrift: "+wdm : "";
+  const wdm=s.wardrift_mesh||{};
+  const ack=wdm.last_acknowledged;
+  const showMeshDelivery=(s.config||{}).has_wardrift_key||wdm.pending||wdm.rejected||wdm.unverified||wdm.retained||wdm.error;
+  const wdmTxt=showMeshDelivery ? `Wardrift: ${wdm.pending??0} pending · ${wdm.rejected??0} rejected · last acknowledged ${ack?upWhen(ack):'never'}${wdm.unverified?' · '+wdm.unverified+' awaiting key verification':''}${wdm.retained?' · '+wdm.retained+' retained for other keys/accounts':''}${!(s.config||{}).has_wardrift_key?' · set the shared Wardrift key to deliver':''}${wdm.error?' · '+wdm.error:''}` : '';
   $("#s-mesh-wd").textContent = wdmTxt; $("#s-mesh-wd").title = wdmTxt;
   // Current-seen counts live in the Live Incoming panel now.
   const L=s.live||{};
@@ -1044,7 +1047,7 @@ function aircraftRow(a,isNew){return `<tr data-key="${a.hex}" class="${isNew?'ne
 function meshRow(m,isNew){const t=(m.node_type||'').toLowerCase();const cls=t.includes('repeat')?'rep':t.includes('comp')?'comp':t.includes('room')?'room':'sensor';
   const hasPos = m.lat!=null && m.lon!=null;
   const rowcls = (isNew?'new ':'')+(hasPos?'':'nogps');
-  const title = hasPos ? 'has a fix — staged for upload' : 'heard, waiting on a position before it can upload';
+  const title = hasPos ? 'advertised position available' : 'no position; Wardrift discovery and local health can still upload';
   const lat = hasPos ? (+m.lat).toFixed(4) : '—';
   const lon = hasPos ? (+m.lon).toFixed(4) : '<span class="await">no GPS yet</span>';
   return `<tr data-key="${m.node_id}" class="${rowcls}" title="${title}"><td>${m.name||m.node_id}</td><td><span class="tag ${cls}">${m.node_type||'?'}</span></td><td>${lat}</td><td>${lon}</td></tr>`;}
@@ -1270,7 +1273,7 @@ function openMesh(id){
   openModal(`
     <div class="hd"><h2>${m.name||id}</h2><div class="sub">${id}</div></div>
     <div class="bd">
-      <div style="margin-bottom:10px"><span class="tag ${cls}">${m.node_type||'node'}</span>${hasPos?'':' <span class="await">· heard, no GPS yet (not uploaded until it has a fix)</span>'}</div>
+      <div style="margin-bottom:10px"><span class="tag ${cls}">${m.node_type||'node'}</span>${hasPos?'':' <span class="await">· no position; Wardrift health and discovery remain eligible to upload</span>'}</div>
       <div class="kv2">
         <span class="k">Node ID</span><span class="v">${id}</span>
         <span class="k">Latitude</span><span class="v">${hasPos?(+m.lat).toFixed(5):'—'}</span>
@@ -1310,10 +1313,16 @@ function portOptions(sel){
 function addDevRow(d){
   d=d||{protocol:'meshcore',enabled:true};
   const row=document.createElement('div'); row.className='devrow';
+  row.dataset.baud=d.baud||115200;
   row.innerHTML=`<label class="switch" style="margin:0" title="enabled"><input type="checkbox" class="d-en" ${d.enabled!==false?'checked':''}></label>
-    <select class="d-port" title="COM port">${portOptions(d.port||'auto')}</select>
     <select class="d-proto"><option value="meshcore"${(d.protocol||'meshcore')==='meshcore'?' selected':''}>MeshCore</option><option value="meshtastic"${d.protocol==='meshtastic'?' selected':''}>Meshtastic</option></select>
+    <select class="d-transport" title="Connection"><option value="serial"${d.transport!=='ble'?' selected':''}>USB serial</option><option value="ble"${d.transport==='ble'?' selected':''}>BLE</option></select>
+    <select class="d-port" title="COM port">${portOptions(d.port||'auto')}</select>
+    <input type="text" class="d-ble" title="BLE address or device UUID" placeholder="BLE address or device UUID" value="${escHtml(d.ble_address||'')}">
     <button class="btn ghost d-rm" type="button" title="remove">✕</button>`;
+  const conn=()=>{const ble=row.querySelector('.d-transport').value==='ble';
+    row.querySelector('.d-port').style.display=ble?'none':''; row.querySelector('.d-ble').style.display=ble?'':'none';};
+  row.querySelector('.d-transport').onchange=conn; conn();
   row.querySelector('.d-rm').onclick=()=>row.remove();
   $("#mesh-devs").appendChild(row);
 }
@@ -1325,20 +1334,22 @@ function collectMeshDevs(){
   return [...document.querySelectorAll('#mesh-devs .devrow')].map(r=>({
     enabled:r.querySelector('.d-en').checked,
     port:r.querySelector('.d-port').value.trim()||'auto',
-    protocol:r.querySelector('.d-proto').value, baud:115200}));
+    transport:r.querySelector('.d-transport').value,
+    ble_address:r.querySelector('.d-ble').value.trim(),
+    protocol:r.querySelector('.d-proto').value, baud:+r.dataset.baud||115200}));
 }
 $("#btn-adddev").onclick=()=>addDevRow({protocol:'meshtastic',enabled:true});
 
 // ---- radio position ----
 let POS=null;
 function renderRadioPositions(devs){
-  const name=d=>`${d.protocol==='meshtastic'?'Meshtastic':'MeshCore'} on ${d.port}`;
+  const name=d=>`${d.protocol==='meshtastic'?'Meshtastic':'MeshCore'} on ${escHtml(d.transport==='ble'?'BLE '+(d.ble_address||''):d.port)}`;
   const st=d=>d.position_status==='setting'?' (setting…)':(d.position_status||'').startsWith('failed')?` (${escHtml(d.position_status)})`:'';
   $("#pos-radios").innerHTML = devs.length ? devs.map(d=>!d.connected
       ? `<div class="posrow">${name(d)}: not connected</div>`
       : d.position
         ? `<div class="posrow ok">✓ ${name(d)} shares a position (${(+d.position[0]).toFixed(3)}, ${(+d.position[1]).toFixed(3)})${st(d)}</div>`
-        : `<div class="posrow warn">⚠ ${name(d)} has no position yet. Set one below so it can earn Wardrift influence.${st(d)}</div>`).join('')
+        : `<div class="posrow warn">⚠ ${name(d)} has no advertised position. Wardrift health can still upload.${st(d)}</div>`).join('')
     : '<div class="posrow">No mesh radio connected.</div>';
 }
 function choosePos(p){ POS=p;
@@ -1371,6 +1382,7 @@ $("#btn-pos-set").onclick=async()=>{
 
 // ---- games: WDGWars + Wardrift ----
 const fmt=n=>(+n||0).toLocaleString();
+const precise=n=>(+n||0).toLocaleString(undefined,{maximumFractionDigits:8});
 function compact(n){ n=+n||0; const a=Math.abs(n);
   if(a>=1e9) return (n/1e9).toFixed(a>=1e10?1:2)+'B';
   if(a>=1e6) return (n/1e6).toFixed(a>=1e7?1:2)+'M';
@@ -1624,7 +1636,7 @@ function renderPlatforms(s){
           <button class="btn sm" type="button" onclick="gotoSetting('#f-wigle-name')">Add WiGLE key</button></div>
         <div class="cta"><img src="/static/wdgwars.png" alt=""><b>WDGWars</b><span>Paste your WDGWars API key to start uploading and see your stats and the leaderboards.</span>
           <button class="btn sm" type="button" onclick="gotoSetting('#f-key')">Add WDGWars key</button></div>
-        <div class="cta"><img src="/static/wardrift.svg" alt="" style="border-radius:10px"><b>Wardrift</b><span>Paste a Wardrift upload key to earn XP and influence for every aircraft and mesh radio.</span>
+        <div class="cta"><img src="/static/wardrift.svg" alt="" style="border-radius:10px"><b>Wardrift</b><span>Paste a Wardrift upload key to send aircraft and mesh radio health.</span>
           <button class="btn gold sm" type="button" onclick="gotoSetting('#f-wdkey')">Add Wardrift key</button></div>
       </div></div>`;
     return;
@@ -1788,8 +1800,10 @@ async function loadUploads(src,force){
   const c=UP.cache[src];
   if(!force && c && Date.now()-c._at<60000) return;
   UP.loading[src]=true;
-  try{ UP.cache[src]={...(await api('/api/uploads?src='+src)),_at:Date.now()}; }
-  catch(e){ UP.cache[src]={ok:false,error:'offline',list:[],_at:Date.now()}; }
+  const binding=UP.wardriftVersion;
+  try{ const result=await api('/api/uploads?src='+src);
+    if(src!=='wardrift'||binding===UP.wardriftVersion) UP.cache[src]={...result,_at:Date.now()}; }
+  catch(e){ if(src!=='wardrift'||binding===UP.wardriftVersion) UP.cache[src]={ok:false,error:'offline',list:[],_at:Date.now()}; }
   UP.loading[src]=false; UP.sig='';
   if(window._lastState) renderUploads(window._lastState);
 }
@@ -1802,6 +1816,14 @@ function wdgRowInfo(o){
 }
 function renderUploads(s){
   const c=s.config||{};
+  // Independent mesh ticks do not update last_cycle. Account changes must also
+  // discard cached/in-flight receipt lists selected with the previous key.
+  const mesh=s.wardrift_mesh||{};
+  const receiptVersion=JSON.stringify([!!c.has_wardrift_key,mesh.account_id||'',mesh.last_acknowledged||0]);
+  if(UP.wardriftVersion!==receiptVersion){
+    UP.wardriftVersion=receiptVersion; delete UP.cache.wardrift; UP.sig='';
+    if(UP.src==='wardrift') UP.rows=[];
+  }
   const srcs=[['wigle','WiGLE',c.has_wigle,'wg'],['wdgwars','WDGWars',c.has_api_key,''],['wardrift','Wardrift',c.has_wardrift_key,'wd']].filter(x=>x[2]);
   const card=$('#card-uploads'); card.style.display=srcs.length?'':'none';
   if(!srcs.length) return;
@@ -1845,12 +1867,12 @@ function renderUploads(s){
           <td class="n">${seen!=null?fmt(seen):'—'}</td><td class="f" title="${escHtml(o.filename||'')}">${escHtml(o.filename||o.endpoint||'')}</td></tr>`; }).join('')}</table>`
       :'<div class="lbmsg">No uploads yet. Your next WDGWars upload shows up here.</div>';
   } else {
-    sum.textContent=`Receipts Wardrift sent back for each upload from this PC (Wardrift has no upload history to read with a key)`;
+    sum.textContent=`Upload receipts from this PC; mesh receipts are for the current Wardrift account`;
     const K={aircraft:'Aircraft',mesh:'Mesh',wifi:'Wi-Fi + BT'};
     box.innerHTML=list.length?`<table><tr><th>When</th><th>Type</th><th>Status</th><th style="text-align:right">Sent</th><th style="text-align:right">XP</th><th style="text-align:right">Influence</th><th>Result</th></tr>${
       list.map((r,i)=>`<tr data-i="${i}"><td>${upWhen(r.t)}</td><td>${K[r.kind]||escHtml(r.kind)}</td>
         <td><span class="st ${r.ok?'ok':'bad'}">${r.ok?'sent':'failed'}</span></td><td class="n">${fmt(r.sent)}</td>
-        <td class="n g">${r.xp?'+'+fmt(r.xp):''}</td><td class="n">${r.influence?'+'+fmt(r.influence):''}</td>
+        <td class="n g">${r.xp?'+'+fmt(r.xp):''}</td><td class="n">${r.kind==='mesh'?(r.influence==null?'—':'+'+precise(r.influence)):(r.influence?'+'+fmt(r.influence):'')}</td>
         <td class="f" title="${escHtml(r.summary)}">${escHtml(r.summary)}</td></tr>`).join('')}</table>`
       :'<div class="lbmsg">No Wardrift uploads from this PC yet. The next one shows up here with its receipt.</div>';
   }
@@ -1869,7 +1891,10 @@ function openUpload(i){
     body=`<div class="kv2">${kv(Object.fromEntries(Object.entries(o).filter(([k])=>k!=='result')))}</div>`
       +(o.result&&typeof o.result==='object'?`<div class="sub" style="margin-top:12px">RESULT</div><div class="kv2">${kv(o.result)}</div>`:'');
   } else { title='Wardrift '+({aircraft:'aircraft',mesh:'mesh',wifi:'Wi-Fi + BT'}[o.kind]||'upload');
-    body=`<div class="kv2">${kv({When:new Date(o.t*1000).toLocaleString(),Result:o.summary,Sent:o.sent,Credited:o.credited,XP:o.xp,Influence:o.influence,Currency:o.currency})}</div>`;
+    body=`<div class="kv2">${kv({When:new Date(o.t*1000).toLocaleString(),Result:o.summary,Sent:o.sent,Credited:o.credited,XP:o.xp,Influence:o.kind==='mesh'?(o.influence==null?'unavailable':precise(o.influence)):o.influence,Currency:o.currency})}</div>`;
+    if(o.kind==='mesh') body+=`<div class="kv2">${kv({Receipt:o.receipt_id,'Health samples':o.telemetry,
+      'Availability seconds':o.availability_seconds,Forwarded:o.forwarded??'unavailable',Suppressed:o.suppressed??'unavailable',
+      Attempted:o.attempted??'unavailable',Failed:o.failed??'unavailable'})}</div>`;
   }
   openModal(`<div class="hd"><h2>${escHtml(title)}</h2><div class="sub">${escHtml({wigle:'WiGLE',wdgwars:'WDGWars',wardrift:'Wardrift'}[UP.src])}</div></div><div class="bd">${body}</div>`);
 }

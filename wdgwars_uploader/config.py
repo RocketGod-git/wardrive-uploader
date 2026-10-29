@@ -92,7 +92,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # uploaded together (MeshCore + Meshtastic side by side). Seeded from the
     # legacy single-device fields on first load; then this list is authoritative.
     # Each entry: {"port": "auto"|"COMx", "protocol": "meshcore"|"meshtastic",
-    #              "baud": 115200, "enabled": true}
+    #              "baud": 115200, "enabled": true, "transport": "serial"|"ble",
+    #              "ble_address": "address or device UUID"}
     "mesh_devices": [],
     # Meshtastic only: raise the device's LoRa hop limit (1-7) for more reach.
     "mesh_hop_limit": 7,
@@ -101,6 +102,20 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "upload_on_start": True,
     "last_upload_ts": 0,
 }
+
+
+def mesh_devices(values: Any, *, transport: str = "serial", ble_address: str = "auto") -> list[dict[str, Any]]:
+    """Add per-device transport defaults without changing existing radio settings."""
+    out = []
+    for dev in values if isinstance(values, list) else []:
+        if not isinstance(dev, dict):
+            continue
+        protocol = str(dev.get("protocol") or "meshcore").lower()
+        conn = str(dev.get("transport") or (transport if protocol == "meshcore" else "serial")).lower()
+        out.append({**dev, "protocol": protocol, "transport": "serial" if conn == "usb_serial" else conn,
+                    "ble_address": str(dev.get("ble_address") or
+                                       (ble_address if protocol == "meshcore" else "")).strip()})
+    return out
 
 
 def device_label(custom: Any = "") -> str:
@@ -208,6 +223,9 @@ class Config:
                     "baud": int(self._data.get("mesh_baud", 115200) or 115200),
                     "enabled": True,
                 }]
+            self._data["mesh_devices"] = mesh_devices(
+                self._data["mesh_devices"], transport=self._data["mesh_transport"],
+                ble_address=self._data["mesh_ble_address"])
 
     def save(self) -> None:
         path = config_path()

@@ -19,6 +19,12 @@ again only when it has been heard since it was last delivered.
 from __future__ import annotations
 
 import calendar
+import copy
+import hashlib
+import math
+import threading
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 import gzip
 import json
 import logging
@@ -44,7 +50,6 @@ MESH_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
            f"Chrome/130.0.0.0 Safari/537.36 wdgwars-uploader/{__version__}")
 MESH_CHUNK = 100   # nodes per batch; larger batches can outlast the request timeout
 MESH_BACKFILL_SECS = 72 * 3600   # how far back the first mesh upload reaches
-MESH_RETRIES = 2   # resends of one batch after a network error, 5xx or sequence conflict
 LOG_BODY_MAX = 4000   # response characters kept in the log per mesh call
 
 log = logging.getLogger("wdgwars.wardrift")
@@ -97,278 +102,718 @@ def _json(resp: requests.Response) -> dict[str, Any]:
 
 
 # --- Mesh ---------------------------------------------------------------------
-_MIN_TS = 1577836800.0   # 2020-01-01; anything earlier is a radio with no clock set
-_FUTURE_SLACK = 600.0    # a heard time further ahead than this is a wrong clock
-_COUNTERS = ("num_packets_tx", "num_packets_rx", "num_tx_relay",
-             "num_tx_relay_canceled", "relay_tx_attempts", "relay_tx_failed")
+_MIN_TS = 1577836800.0
+_FUTURE_SLACK = 120.0
+_UINT32 = 2 ** 32 - 1
+_COUNTERS = ("num_packets_tx", "num_packets_rx", "num_packets_rx_bad", "num_rx_dupe",
+             "num_tx_relay", "num_tx_relay_canceled", "num_tx_dropped", "relay_tx_attempts",
+             "relay_tx_failed", "relay_unique_attempted", "relay_unique_completed",
+             "num_online_nodes", "num_total_nodes", "flood_tx", "direct_tx", "flood_rx", "direct_rx")
+_GAUGES = {"num_online_nodes", "num_total_nodes"}
+_HEALTH_RANGES = {"battery_level": (0, 100), "voltage": (0, 100),
+                  "channel_utilization": (0, 100), "air_util_tx": (0, 100),
+                  "rssi_dbm": (-200, 30), "snr_db": (-100, 100), "noise_floor_dbm": (-200, 30),
+                  "tx_airtime_seconds": (0, _UINT32), "rx_airtime_seconds": (0, _UINT32)}
 _ID_LEN = {"meshcore": 16, "meshtastic": 8}
+MAX_MESH_BYTES = 2_000_000
+MAX_PENDING_SAMPLES = 10_000
+MAX_STATE_BYTES = 64_000_000
+MAX_QUEUE_BYTES = 32_000_000
 
 
 @dataclass
 class MeshResult:
     ok: bool = True
-    nodes: int = 0          # nodes the server accepted
-    telemetry: int = 0      # local-radio samples the server accepted
+    nodes: int = 0
+    telemetry: int = 0
     error: str = ""
-    responses: list[tuple[int, str]] = field(default_factory=list)   # (status, body) per call
+    responses: list[tuple[int, str]] = field(default_factory=list)
+    currency: int = 0
+    influence: float = 0.0
 
     def summary(self) -> str:
-        if not self.nodes:
-            return self.error or "nothing new"
-        s = f"{self.nodes} nodes sent" + (", telemetry" if self.telemetry else "")
-        return s + (f", then failed: {self.error}" if self.error else "")
+        s = f"{self.nodes} nodes acknowledged, {self.telemetry} health samples" if self.nodes else "nothing new"
+        if self.nodes:
+            s += f", +{self.currency} currency, +{self.influence:g} influence"
+        return (s + f", then failed: {self.error}") if self.error and self.nodes else self.error or s
+
+
+class MeshStateError(RuntimeError):
+    """The delivery ledger cannot safely be read or persisted."""
+
+
+class MeshQueueFull(MeshStateError):
+    """New work cannot fit; previously persisted requests can still be drained."""
+
+
+def credential_fingerprint(key: str) -> str:
+    key = (key or "").strip()
+    return hashlib.sha256(key.encode("utf-8")).hexdigest() if key else ""
 
 
 def _iso(ts: float) -> str:
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(ts))
+    # Preserve query/event acquisition precision, including separate groups in a second.
+    return datetime.fromtimestamp(ts, timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def _num(v: Any, low: float = -math.inf, high: float = math.inf) -> int | float | None:
+    try:
+        return v if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and low <= v <= high else None
+    except OverflowError:
+        return None
+
+
+def _uint(v: Any) -> int | None:
+    value = _num(v, 0, _UINT32)
+    return int(value) if value is not None and int(value) == value else None
 
 
 def _heard_ts(n: dict[str, Any], now: float | None = None) -> float | None:
-    """When a node was last heard, or None without a believable time. Nodes
-    stored before ``heard_ts`` existed fall back to ``first_seen``."""
     if "heard_ts" in n:
         ts = n["heard_ts"]
     else:
         try:
             ts = calendar.timegm(time.strptime(str(n.get("first_seen")), "%Y-%m-%d %H:%M:%S"))
-        except ValueError:
+        except (ValueError, TypeError, OverflowError):
             return None
     try:
         ts = float(ts)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
-    if ts < _MIN_TS or ts > (now or time.time()) + _FUTURE_SLACK:
-        return None
-    return ts
+    return ts if _num(ts, _MIN_TS, (now if now is not None else time.time()) + _FUTURE_SLACK) is not None else None
 
 
 def _wire_node(n: dict[str, Any], heard: float, now: float) -> dict[str, Any] | None:
-    """Captured node -> mesh ingest node. ``lat``/``lon`` are left out without a
-    fix."""
-    net = n.get("network")
-    nid = str(n.get("node_id") or "").lower()
-    if len(nid) != _ID_LEN.get(net, 0) or any(c not in "0123456789abcdef" for c in nid):
+    net = str(n.get("network") or "").lower()
+    nid = str(n.get("node_id") or "").lower().removeprefix("!")
+    if not nid or len(nid) != _ID_LEN.get(net, 0) or any(c not in "0123456789abcdef" for c in nid):
         return None
     out: dict[str, Any] = {"network": net, "node_id": nid}
     pub = str(n.get("public_key") or "").lower()
-    if net == "meshcore" and len(pub) == 64:
+    if net == "meshcore":
+        if len(pub) != 64 or any(c not in "0123456789abcdef" for c in pub) or not pub.startswith(nid):
+            return None
         out["public_key"] = pub
-    out["node_type"] = n.get("node_type") or "COMPANION"
-    out["name"] = str(n.get("name") or nid)[:64]
-    if n.get("lat") is not None and n.get("lon") is not None:
-        out["lat"], out["lon"] = round(float(n["lat"]), 6), round(float(n["lon"]), 6)
+    role = str(n.get("node_type") or "COMPANION").upper()
+    out["node_type"] = role if role in {"COMPANION", "REPEATER", "ROOM_SERVER", "SENSOR"} else (
+        "REPEATER" if role in {"ROUTER", "ROUTER_CLIENT", "ROUTER_LATE"} else "COMPANION")
+    out["name"] = _text_limit("".join(c for c in str(n.get("name") or nid) if c.isprintable()), 80) or nid
+    lat, lon = _num(n.get("lat"), -90, 90), _num(n.get("lon"), -180, 180)
+    if lat is not None and lon is not None:
+        out.update(lat=round(lat, 6), lon=round(lon, 6))
+    snr, hops = _num(n.get("snr"), -100, 100), _uint(n.get("hops"))
+    if snr is not None:
+        out["snr"] = snr
+    if hops is not None and hops <= 255:
+        out["hops"] = hops
     out["last_heard"] = _iso(min(heard, now))
     return out
 
 
-def _num(v: Any) -> Any:
-    return v if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+def _identity(node: dict[str, Any]) -> str:
+    return node["network"] + ":" + node.get("public_key", node["node_id"])
+
+
+def _uuid(value: Any) -> bool:
+    try:
+        return isinstance(value, str) and uuid.UUID(value).int != 0
+    except (ValueError, TypeError, AttributeError):
+        return False
+
+
+def _encode(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+
+
+def _text_limit(value: str, units: int) -> str:
+    # The C# contract measures UTF-16 code units, including surrogate pairs.
+    return value.encode("utf-16-le", errors="replace")[:units * 2].decode("utf-16-le", errors="ignore")
+
+
+def _capture_record(radio: dict[str, Any]) -> dict[str, Any]:
+    """Keep measurement fields only, with nonfinite readings explicitly unknown."""
+    def clean(value):
+        if isinstance(value, dict):
+            return {k: clean(v) for k, v in value.items()}
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return _num(value)
+        return value if value is None or isinstance(value, (str, bool)) else None
+
+    fields = {"capture_id", "credential_fingerprint", "observed_at", "uptime_seconds", "uptime_at",
+              "transport", "firmware_version", "profile", "capability_profile", "role", "hardware",
+              "health_at", "counters_at", "host_received_at", "external_power", "queue_length", "error_flags"}
+    fields.update(_HEALTH_RANGES)
+    out = {k: clean(v) for k, v in radio.items() if k in fields}
+    for group, keys in (("node", {"network", "node_id", "public_key", "node_type", "name", "lat", "lon", "snr", "hops"}),
+                        ("health", set(_HEALTH_RANGES) | {"external_power", "queue_length", "error_flags"}),
+                        ("counters", set(_COUNTERS))):
+        raw = radio.get(group)
+        if isinstance(raw, dict):
+            out[group] = {k: clean(v) for k, v in raw.items() if k in keys}
+    return out
+
+
+def _sample(radio: dict[str, Any], sample_id: str, previous: dict[str, Any], now: float) -> dict[str, Any]:
+    obs = _num(radio.get("observed_at"), _MIN_TS, now + _FUTURE_SLACK)
+    if obs is None:
+        raise ValueError("missing or invalid measurement acquisition time")
+    wire = _wire_node(radio.get("node") or {}, obs, now)
+    if wire is None:
+        raise ValueError("invalid local radio identity (MeshCore requires its full public key)")
+    net = wire["network"]
+    profile = str(radio.get("profile") or radio.get("capability_profile") or "")
+    if net == "meshcore":
+        profile = "meshcore-companion-v1"
+    elif profile not in {"meshtastic-localstats-v1", "meshtastic-devicemetrics-v1", "meshtastic-basic-v1"}:
+        # A device-only event does not establish LocalStats capability.
+        profile = "meshtastic-devicemetrics-v1"
+    fw = _text_limit(str(radio.get("firmware_version") or "unknown").strip(), 120) or "unknown"
+    if net == "meshtastic" and profile == "meshtastic-devicemetrics-v1" and previous.get("profile") == "meshtastic-localstats-v1" and previous.get("fw") == fw:
+        # A restart/reconnect may deliver DeviceMetrics before LocalStats. Keep a
+        # capability already established by this exact radio and firmware.
+        profile = "meshtastic-localstats-v1"
+    up = _uint(radio.get("uptime_seconds"))
+    if up is not None:
+        up_at = _num(radio.get("uptime_at", obs))
+        if up_at is None or abs(up_at - obs) > 2:
+            raise ValueError("uptime and sample were acquired more than two seconds apart")
+    counters = {k: _uint((radio.get("counters") or {}).get(k)) for k in _COUNTERS}
+    # Stock firmware cannot establish attempted/unique forwarding evidence.
+    for k in ("relay_tx_attempts", "relay_tx_failed", "relay_unique_attempted", "relay_unique_completed"):
+        counters[k] = None
+    if net == "meshcore":
+        for k in ("num_tx_relay", "num_tx_relay_canceled", "num_tx_dropped"):
+            counters[k] = None
+    for part, total in (("num_tx_relay", "num_packets_tx"), ("num_packets_rx_bad", "num_packets_rx"), ("num_rx_dupe", "num_packets_rx")):
+        if counters[part] is not None and counters[total] is not None and counters[part] > counters[total]:
+            counters[part] = None
+    prev = previous
+    reset = not prev.get("epoch") or prev.get("fw") != fw or prev.get("profile") != profile
+    if up is not None and prev.get("uptime") is not None and up < prev["uptime"]:
+        reset = True
+    for k, v in counters.items():
+        before = (prev.get("counters") or {}).get(k)
+        if k not in _GAUGES and v is not None and before is not None and v < before:
+            reset = True
+    epoch = str(uuid.uuid4()) if reset else prev["epoch"]
+    seq = int(prev.get("seq", 0)) + 1
+    transport = radio.get("transport", "usb_serial")
+    if transport == "serial":
+        transport = "usb_serial"
+    if transport not in {"usb_serial", "ble"}:
+        raise ValueError("unsupported local radio transport")
+    tel: dict[str, Any] = {"sample_id": sample_id, "counter_epoch": epoch, "sample_sequence": seq,
+        "observed_at": _iso(obs), "transport": transport, "source": "local_radio", "firmware_version": fw,
+        "capability_profile": profile, "uptime_seconds": up}
+    received_at = _num(radio.get("host_received_at"), _MIN_TS, now + _FUTURE_SLACK)
+    if received_at is not None:
+        tel["host_received_at"] = _iso(received_at)
+    if radio.get("role"):
+        tel["role"] = _text_limit(str(radio["role"]), 40)
+    if radio.get("hardware"):
+        tel["hardware"] = _text_limit(str(radio["hardware"]), 120)
+    for group in ("health", "counters"):
+        measured = _num(radio.get(group + "_at"), _MIN_TS, obs + 2)
+        if radio.get(group + "_at") is not None and (measured is None or measured < obs - 7 * 86400):
+            raise ValueError(f"{group} acquisition time does not match sample")
+        if measured is None:
+            continue
+        if group == "counters":
+            tel[group] = {"measured_at": _iso(measured), **counters}
+        else:
+            raw = {**radio, **(radio.get("health") or {})}
+            health = {k: _num(raw.get(k), *bounds) for k, bounds in _HEALTH_RANGES.items()}
+            health.update({k: _uint(raw.get(k)) for k in ("queue_length", "error_flags")})
+            health["external_power"] = raw.get("external_power") if isinstance(raw.get("external_power"), bool) else None
+            level = _uint(raw.get("battery_level"))
+            if net == "meshtastic" and level is not None and level > 100:
+                health.update(battery_level=None, external_power=True)
+            tel[group] = {"measured_at": _iso(measured), **health}
+    wire["telemetry"] = tel
+    old_counters = {} if reset else dict(prev.get("counters") or {})
+    old_counters.update({k: v for k, v in counters.items() if v is not None})
+    state = {"epoch": epoch, "seq": seq, "observed_at": obs, "uptime": up if up is not None else (None if reset else prev.get("uptime")),
+             "counters": old_counters, "fw": fw, "profile": profile}
+    return {"wire": wire, "key": int(obs), "identity": _identity(wire), "radio": state}
 
 
 class MeshReporter:
-    """Mesh upload state kept across restarts: this install's ``reporter_id``,
-    the last ``sequence_no``, the backfill floor (``since``), the heard time last
-    delivered for each node, and the counter epoch of each local radio."""
+    """Single durable, account-bound delivery ledger. No HTTP work occurs here.
 
+    Legacy history remains explicitly unbound. Captures are persisted before handoff
+    acknowledgement; exact request bytes and sequence allocation precede every send.
+    """
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
-        self.reporter_id = ""
-        self.sequence_no = 0
-        self.since = 0.0                      # nodes heard before this are never sent (set on first use)
-        self.sent: dict[str, int] = {}        # node_id -> heard time delivered
-        self.radios: dict[str, dict] = {}     # local node_id -> epoch state
-        self.require_fix = False              # server refused nodes without lat/lon
+        self._lock = threading.RLock()
+        self.error = ""
+        self._read_error = False
+        self._data: dict[str, Any] = {}
         try:
-            data = json.loads(self.path.read_text(encoding="utf-8"))
-            self.reporter_id = str(data.get("reporter_id") or "")
-            self.sequence_no = int(data.get("sequence_no") or 0)
-            self.since = float(data.get("since") or 0)
-            self.sent = {k: int(v) for k, v in (data.get("sent") or {}).items()}
-            self.radios = {k: v for k, v in (data.get("radios") or {}).items() if isinstance(v, dict)}
-            self.require_fix = bool(data.get("require_fix"))
-        except (OSError, ValueError, TypeError, AttributeError):
-            pass
-        if not self.reporter_id:
-            self.reporter_id = str(uuid.uuid4())
+            if self.path.exists():
+                data = json.loads(self.path.read_text(encoding="utf-8"))
+                self._validate_state(data)
+                self._data = data
+            else:
+                self._data = {"reporter_id": str(uuid.uuid4()), "sequence_no": 0}
+            self._data.setdefault("version", 2)
+            for k, default in (("accounts", {}), ("credentials", {}), ("credential_errors", {}), ("observations", []),
+                               ("batches", []), ("quarantine", []), ("capture_ids", [])):
+                self._data.setdefault(k, default)
+            # Original fields stay available as unbound diagnostic history; require_fix
+            # is intentionally never consulted for positionless telemetry.
+            self._data.setdefault("since", 0.0)
+            self._data.setdefault("sent", {})
+            self._data.setdefault("radios", {})
             self.save()
+        except (OSError, ValueError, TypeError, AttributeError, KeyError, OverflowError, MeshStateError) as e:
+            self._read_error = True
+            self.error = f"Mesh state unavailable; preserve {self.path.name} and repair/restore it: {e}"
+
+    @staticmethod
+    def _validate_state(data: Any) -> None:
+        def integer(value: Any, minimum: int = 0, maximum: int = 2 ** 63 - 1) -> bool:
+            return type(value) is int and minimum <= value <= maximum
+
+        def fingerprint(value: Any, *, empty: bool = False) -> bool:
+            return isinstance(value, str) and (empty and not value or
+                len(value) == 64 and all(c in "0123456789abcdef" for c in value))
+
+        def identity(value: Any) -> bool:
+            if not isinstance(value, str) or ":" not in value:
+                return False
+            network, key = value.split(":", 1)
+            length = {"meshtastic": 8, "meshcore": 64}.get(network)
+            return len(key) == length and all(c in "0123456789abcdef" for c in key)
+
+        def receipt_record(rid: str, record: Any, account: str) -> None:
+            if not _uuid(rid) or not isinstance(record, dict) or record.get("receipt_id") != rid or record.get("account_id") != account:
+                raise ValueError("invalid archived receipt binding")
+            if _num(record.get("accepted_at"), _MIN_TS) is None or not integer(record.get("nodes"), 0, 500):
+                raise ValueError("invalid archived receipt acknowledgment")
+            receipt = record.get("receipt")
+            if not isinstance(receipt, dict) or receipt.get("ok") is not True or receipt.get("receipt_id") != rid or not _uuid(receipt.get("batch_id")):
+                raise ValueError("invalid archived receipt")
+            if not _valid_receipt(receipt) or receipt["reports_accepted"] > record["nodes"]:
+                raise ValueError("invalid archived receipt values")
+
+        if not isinstance(data, dict) or not _uuid(data.get("reporter_id")):
+            raise ValueError("missing or invalid reporter_id")
+        if data.get("version", 2) != 2:
+            raise ValueError("unsupported mesh state version")
+        seq = data.get("sequence_no", 0)
+        if not integer(seq):
+            raise ValueError("invalid reporter sequence")
+        for k in ("accounts", "credentials", "credential_errors", "sent", "radios"):
+            if k in data and not isinstance(data[k], dict):
+                raise ValueError(f"invalid {k}")
+        for k in ("observations", "batches", "quarantine", "capture_ids"):
+            if k in data and not isinstance(data[k], list):
+                raise ValueError(f"invalid {k}")
+        for account, state in data.get("accounts", {}).items():
+            if not _uuid(account) or not isinstance(state, dict):
+                raise ValueError("invalid account state")
+            for k in ("sent", "radios", "receipts"):
+                if not isinstance(state.get(k), dict):
+                    raise ValueError(f"invalid account {k}")
+            if _num(state.get("since"), 0) is None or not isinstance(state.get("error"), str):
+                raise ValueError("invalid account delivery status")
+            for subject, cursor in state["sent"].items():
+                if not identity(subject) or not integer(cursor):
+                    raise ValueError("invalid acknowledged discovery cursor")
+            for subject, radio in state["radios"].items():
+                if not identity(subject) or not isinstance(radio, dict) or not _uuid(radio.get("epoch")):
+                    raise ValueError("invalid radio epoch identity")
+                if not integer(radio.get("seq"), 1) or _num(radio.get("observed_at"), _MIN_TS) is None:
+                    raise ValueError("invalid radio sample high-water")
+                if radio.get("uptime") is not None and not integer(radio["uptime"], 0, _UINT32):
+                    raise ValueError("invalid radio uptime high-water")
+                if not isinstance(radio.get("fw"), str) or not 0 < len(radio["fw"]) <= 120 or not isinstance(radio.get("profile"), str) or not 0 < len(radio["profile"]) <= 80:
+                    raise ValueError("invalid radio capability history")
+                counters = radio.get("counters")
+                if not isinstance(counters, dict) or any(k not in _COUNTERS or not integer(v, 0, _UINT32) for k, v in counters.items()):
+                    raise ValueError("invalid radio counter high-water")
+            for rid, record in state["receipts"].items():
+                receipt_record(rid, record, account)
+        for fp, account in data.get("credentials", {}).items():
+            if not fingerprint(fp) or account not in data.get("accounts", {}):
+                raise ValueError("invalid credential binding")
+        for fp, error in data.get("credential_errors", {}).items():
+            if not fingerprint(fp, empty=True) or not isinstance(error, str):
+                raise ValueError("invalid credential error status")
+        capture_ids = data.get("capture_ids", [])
+        if any(not isinstance(value, str) or not value for value in capture_ids) or len(capture_ids) != len(set(capture_ids)):
+            raise ValueError("invalid capture handoff history")
+        sample_ids = set()
+        for observation in data.get("observations", []) + data.get("quarantine", []):
+            if not isinstance(observation, dict) or not _uuid(observation.get("sample_id")) or not isinstance(observation.get("radio"), dict):
+                raise ValueError("invalid pending observation")
+            if not isinstance(observation.get("capture_id"), str) or not observation["capture_id"] or not fingerprint(observation.get("fingerprint"), empty=True):
+                raise ValueError("invalid pending capture binding")
+            raw = observation["radio"]
+            if raw.get("capture_id", observation["capture_id"]) != observation["capture_id"] or raw.get("credential_fingerprint", observation["fingerprint"]) != observation["fingerprint"]:
+                raise ValueError("pending capture metadata differs from its binding")
+            if observation["sample_id"] in sample_ids:
+                raise ValueError("duplicate pending sample identity")
+            sample_ids.add(observation["sample_id"])
+            if observation.get("account_id") is not None and observation["account_id"] not in data.get("accounts", {}):
+                raise ValueError("observation account is missing")
+            if observation.get("account_id") is not None and data.get("credentials", {}).get(observation["fingerprint"]) != observation["account_id"]:
+                raise ValueError("observation credential does not match its account")
+            if "error" in observation and not isinstance(observation["error"], str):
+                raise ValueError("invalid quarantine status")
+        batches, sequences = set(), set()
+        for batch in data.get("batches", []):
+            body = json.loads(batch["payload"])
+            if batch.get("payload_sha256") != hashlib.sha256(batch["payload"].encode("utf-8")).hexdigest():
+                raise ValueError("pending request checksum does not match")
+            if not _uuid(batch.get("account_id")) or not _uuid(body.get("batch_id")) or body.get("reporter_id") != data["reporter_id"]:
+                raise ValueError("invalid pending batch binding")
+            if body.get("sequence_no", 0) > seq or body.get("sequence_no", 0) <= 0:
+                raise ValueError("pending batch exceeds sequence high-water")
+            if not integer(body.get("sequence_no"), 1) or body["sequence_no"] in sequences or body["batch_id"] in batches:
+                raise ValueError("duplicate pending batch or sequence")
+            sequences.add(body["sequence_no"])
+            batches.add(body["batch_id"])
+            if not isinstance(body.get("nodes"), list) or len(body["nodes"]) > 500 or len(batch["payload"].encode("utf-8")) > MAX_MESH_BYTES:
+                raise ValueError("invalid pending request size")
+            if batch.get("sample_ids") != [n["telemetry"]["sample_id"] for n in body["nodes"] if "telemetry" in n]:
+                raise ValueError("pending sample set differs from immutable request")
+            if len(batch["sample_ids"]) > 100 or any(not _uuid(sid) or sid in sample_ids for sid in batch["sample_ids"]):
+                raise ValueError("invalid or repeated pending sample identity")
+            if len(batch["sample_ids"]) != len(set(batch["sample_ids"])):
+                raise ValueError("duplicate pending sample identity")
+            sample_ids.update(batch["sample_ids"])
+            if batch.get("batch_id") != body["batch_id"] or batch.get("sequence_no") != body["sequence_no"] or batch.get("status") not in {"pending", "rejected"}:
+                raise ValueError("pending batch metadata differs from immutable request")
+            if batch["account_id"] not in data.get("accounts", {}) or len(batch["items"]) != len(body["nodes"]):
+                raise ValueError("pending batch acknowledgment state is missing")
+            for item, node in zip(batch["items"], body["nodes"]):
+                if not isinstance(item, dict) or not identity(item.get("identity")) or item["identity"] != _identity(node) or not integer(item.get("key")):
+                    raise ValueError("invalid pending acknowledgment cursor")
+            if not integer(batch.get("attempts")) or _num(batch.get("retry_at"), 0) is None or not isinstance(batch.get("error"), str):
+                raise ValueError("invalid pending retry status")
+        # json.loads permits NaN/Infinity; no part of the ledger may contain them.
+        if len(_encode(data).encode("utf-8")) > MAX_STATE_BYTES:
+            raise ValueError("mesh ledger exceeds supported size")
+
+    @property
+    def reporter_id(self) -> str:
+        return self._data.get("reporter_id", "")
+
+    @property
+    def sequence_no(self) -> int:
+        return self._data.get("sequence_no", 0)
+
+    @property
+    def sent(self) -> dict:
+        return self._data.get("sent", {})
+
+    @property
+    def radios(self) -> dict:
+        return self._data.get("radios", {})
+
+    @property
+    def since(self) -> float:
+        return self._data.get("since", 0)
+
+    def _check(self) -> None:
+        if self._read_error:
+            raise MeshStateError(self.error)
 
     def save(self) -> None:
-        data = json.dumps({"reporter_id": self.reporter_id, "sequence_no": self.sequence_no,
-                           "since": self.since, "sent": self.sent, "radios": self.radios,
-                           "require_fix": self.require_fix})
-        try:
-            fd, tmp = tempfile.mkstemp(dir=str(self.path.parent), suffix=".tmp")
+        with self._lock:
+            self._check()
+            tmp = None
             try:
-                with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    f.write(data)
+                payload = _encode(self._data).encode("utf-8")
+                if len(payload) > MAX_STATE_BYTES:
+                    raise MeshStateError("mesh ledger full; preserve/export the ledger before recovery")
+                fd, tmp = tempfile.mkstemp(dir=str(self.path.parent), suffix=".tmp")
+                with os.fdopen(fd, "wb") as f:
+                    f.write(payload)
+                    f.flush()
+                    os.fsync(f.fileno())
                 os.replace(tmp, self.path)
-            except Exception:
-                try:
-                    os.unlink(tmp)
-                except OSError:
-                    pass
-                raise
-        except OSError as e:
-            log.warning("could not save Wardrift mesh state: %s", e)
+                tmp = None
+                # Persist the rename on platforms that support directory fsync.
+                if os.name != "nt":
+                    fd = os.open(self.path.parent, os.O_RDONLY)
+                    try:
+                        os.fsync(fd)
+                    finally:
+                        os.close(fd)
+                self.error = ""
+            except (OSError, ValueError, MeshStateError) as e:
+                self.error = f"Mesh state was not persisted; no untracked upload will be sent: {e}"
+                raise MeshStateError(self.error) from e
+            finally:
+                if tmp:
+                    try:
+                        os.unlink(tmp)
+                    except OSError:
+                        pass
 
-    def next_sequence(self) -> int:
-        """Strictly increasing per reporter, seeded from the clock. Saved on use
-        so a number is never sent twice for different batches."""
-        self.sequence_no = max(int(time.time()), self.sequence_no + 1)
-        self.save()
-        return self.sequence_no
-
-    def due(self, nodes: list[dict[str, Any]], now: float) -> list[dict[str, Any]]:
-        """Nodes heard since the heard time last delivered for them (and since
-        the backfill floor). Nodes without a believable heard time are skipped."""
-        out = []
-        for n in nodes:
-            heard = _heard_ts(n, now)
-            if heard is None or heard < self.since:
-                continue
-            key = int(heard)
-            nid = str(n.get("node_id") or "").lower()
-            if nid in self.sent and key <= self.sent[nid]:
-                continue
-            wire = _wire_node(n, heard, now)
-            if wire is None or (self.require_fix and "lat" not in wire):
-                continue
-            out.append({"wire": wire, "key": key})
-        return out
-
-    def sample(self, radio: dict[str, Any], now: float,
-               stored: dict[str, Any] | None = None) -> dict[str, Any] | None:
-        """The local radio's node with a ``telemetry`` block, or None if this
-        reading was already delivered. ``stored`` is the same node as captured
-        off the air, used for a position the radio itself does not report. The
-        epoch state is kept only once the server accepts it (see :meth:`accept`)."""
-        # Dated when the uptime was measured, so the uptime always matches its
-        # timestamp; a later read of the same measurement is not sent again.
-        obs = float(radio.get("uptime_at") or radio.get("observed_at") or 0)
-        node = dict(radio.get("node") or {})
-        if stored and (node.get("lat") is None or node.get("lon") is None):
-            node["lat"], node["lon"] = stored.get("lat"), stored.get("lon")
-        heard = max(obs, _heard_ts(stored, now) or 0) if stored else obs
-        wire = _wire_node(node, heard, now)
-        if wire is None or obs <= 0:
-            return None
-        nid = wire["node_id"]
-        prev = self.radios.get(nid) or {}
-        if obs <= float(prev.get("observed_at") or 0):
-            return None
-        up = _num(radio.get("uptime_seconds"))
-        up = int(up) if up is not None else None
-        counters = {k: _num((radio.get("counters") or {}).get(k)) for k in _COUNTERS}
-        tx, rx = counters["num_packets_tx"], counters["num_packets_rx"]
-        fw = radio.get("firmware_version") or None
-        # A new counter epoch whenever the radio's counters may have restarted:
-        # uptime or a packet counter went backwards, or the firmware changed.
-        reset = not prev.get("epoch")
-        for cur, last in ((up, prev.get("uptime")), (tx, prev.get("tx")), (rx, prev.get("rx"))):
-            if cur is not None and last is not None and cur < last:
-                reset = True
-        if fw and prev.get("fw") and fw != prev["fw"]:
-            reset = True
-        epoch = str(uuid.uuid4()) if reset else prev["epoch"]
-        seq = 1 if reset else int(prev.get("seq") or 0) + 1
-
-        tel: dict[str, Any] = {
-            "sample_id": str(uuid.uuid4()),
-            "counter_epoch": epoch,
-            "sample_sequence": seq,
-            "observed_at": _iso(obs),
-            "transport": radio.get("transport") or "usb_serial",
-            "source": "local_radio",
-            "firmware_version": fw,
-            "capability_profile": radio.get("profile"),
-            "uptime_seconds": up,
-        }
-        # A health or counters block nobody measured is left out.
-        if radio.get("health_at"):
-            level = _num(radio.get("battery_level"))
-            volts = _num(radio.get("voltage"))
-            tel["health"] = {
-                "measured_at": _iso(float(radio["health_at"])),
-                # Meshtastic reports 101 for external power; the field is a percentage.
-                "battery_level": max(0, min(100, int(level))) if level is not None else None,
-                "voltage": round(float(volts), 3) if volts is not None else None,
-            }
-        if radio.get("counters_at"):
-            tel["counters"] = {"measured_at": _iso(float(radio["counters_at"])), **counters}
-        wire["telemetry"] = tel
-        state = {"epoch": epoch, "seq": seq, "observed_at": obs,
-                 "uptime": up if up is not None else prev.get("uptime"),
-                 "tx": tx if tx is not None else prev.get("tx"),
-                 "rx": rx if rx is not None else prev.get("rx"),
-                 "fw": fw or prev.get("fw")}
-        return {"wire": wire, "key": int(heard), "radio": state}
-
-    def items(self, nodes: list[dict[str, Any]], radios: list[dict[str, Any]],
-              now: float) -> list[dict[str, Any]]:
-        """Everything due, local radios first so their telemetry always rides
-        in the first batch. The first call sets the backfill floor."""
-        if not self.since:
-            self.since = now - MESH_BACKFILL_SECS
+    def _commit(self, updated: dict) -> None:
+        previous = self._data
+        self._data = updated
+        try:
             self.save()
-        by_id = {str(n.get("node_id") or "").lower(): n for n in nodes}
-        samples: dict[str, dict[str, Any]] = {}
-        for r in sorted(radios, key=lambda r: float(r.get("observed_at") or 0), reverse=True):
-            nid = str((r.get("node") or {}).get("node_id") or "").lower()
-            if nid in samples:
-                continue   # the same radio twice (replugged): the newest reading goes
-            s = self.sample(r, now, by_id.get(nid))
-            if s and not (self.require_fix and "lat" not in s["wire"]):
-                samples[nid] = s
-        return list(samples.values()) + [it for it in self.due(nodes, now)
-                                         if it["wire"]["node_id"] not in samples]
+        except MeshStateError:
+            self._data = previous
+            raise
 
-    def batch_body(self, part: list[dict[str, Any]], now: float) -> dict[str, Any]:
-        """One request body. Its batch_id and sequence_no are kept for every
-        resend of this batch."""
-        return {"now": _iso(now), "nodes": [it["wire"] for it in part],
-                "batch_id": str(uuid.uuid4()), "reporter_id": self.reporter_id,
-                "sequence_no": self.next_sequence()}
+    @staticmethod
+    def _account(data: dict, account_id: str) -> dict:
+        return data["accounts"].setdefault(account_id, {"sent": {}, "radios": {}, "receipts": {}, "since": 0.0, "error": ""})
 
-    def plan(self, nodes: list[dict[str, Any]], radios: list[dict[str, Any]],
-             now: float) -> list[dict[str, Any]]:
-        """Request bodies for everything due: the local radios' telemetry on its
-        own first, since it is small and is what availability is measured from,
-        then heard nodes in batches of at most MESH_CHUNK."""
-        items = self.items(nodes, radios, now)
-        own = [it for it in items if it.get("radio")]
-        rest = [it for it in items if not it.get("radio")]
-        parts = ([own] if own else []) + [rest[i:i + MESH_CHUNK]
-                                          for i in range(0, len(rest), MESH_CHUNK)]
-        return [{"items": part, "body": self.batch_body(part, now)} for part in parts]
+    def _capacity(self, data: dict) -> None:
+        records = data["observations"] + data["batches"] + data["quarantine"]
+        count = len(data["observations"]) + len(data["quarantine"]) + sum(len(b["sample_ids"]) or 1 for b in data["batches"])
+        # Reserve envelope/normalization space while observations are still raw,
+        # so a full capture queue can always turn its existing work into requests.
+        size = len(_encode(records).encode("utf-8")) + 4096 * len(data["observations"])
+        if count > MAX_PENDING_SAMPLES or size > MAX_QUEUE_BYTES:
+            raise MeshQueueFull("Mesh delivery queue full; pending/rejected measurements retained. Restore delivery or export failures.")
 
-    def accept(self, items: list[dict[str, Any]]) -> None:
-        for it in items:
-            nid = it["wire"]["node_id"]
-            self.sent[nid] = max(it["key"], self.sent.get(nid, 0))
-            if it.get("radio"):
-                self.radios[nid] = it["radio"]
-        self.save()
+    def stage(self, radios: list[dict[str, Any]], fingerprint: str = "") -> list[str]:
+        with self._lock:
+            self._check()
+            updated = copy.deepcopy(self._data)
+            known = set(updated["capture_ids"])
+            accepted = []
+            for radio in radios:
+                radio = _capture_record(radio)
+                capture_id = str(radio.get("capture_id") or hashlib.sha256(_encode(radio).encode("utf-8")).hexdigest())
+                accepted.append(capture_id)
+                if capture_id in known:
+                    continue
+                fp = str(radio.get("credential_fingerprint", fingerprint))
+                updated["observations"].append({"capture_id": capture_id, "sample_id": str(uuid.uuid4()),
+                    "fingerprint": fp, "account_id": updated["credentials"].get(fp) if fp else None,
+                    "radio": copy.deepcopy(radio)})
+                known.add(capture_id)
+                updated["capture_ids"].append(capture_id)
+            # Capture handoff IDs are a bounded recent cache, not reward deduplication.
+            updated["capture_ids"] = updated["capture_ids"][-MAX_PENDING_SAMPLES * 2:]
+            self._capacity(updated)
+            if updated != self._data:
+                self._commit(updated)
+            elif self.error:
+                self.save()
+            return accepted
+
+    def bind(self, fingerprint: str, account_id: str) -> None:
+        if not fingerprint or not _uuid(account_id):
+            raise MeshStateError("Mesh context did not identify an account")
+        with self._lock:
+            self._check()
+            updated = copy.deepcopy(self._data)
+            old = updated["credentials"].get(fingerprint)
+            if old and old != account_id:
+                raise MeshStateError("Credential account changed; existing measurements remain bound to their original account")
+            updated["credentials"][fingerprint] = account_id
+            updated["credential_errors"].pop(fingerprint, None)
+            self._account(updated, account_id)
+            for obs in updated["observations"]:
+                if obs["fingerprint"] == fingerprint and obs["account_id"] is None:
+                    obs["account_id"] = account_id
+            self._commit(updated)
+
+    def context_error(self, fingerprint: str, error: str) -> None:
+        with self._lock:
+            self._check()
+            updated = copy.deepcopy(self._data)
+            updated["credential_errors"][fingerprint] = error
+            self._commit(updated)
+
+    def prepare(self, nodes: list[dict[str, Any]], account_id: str, now: float) -> None:
+        with self._lock:
+            self._check()
+            updated = copy.deepcopy(self._data)
+            account = self._account(updated, account_id)
+            if not account["since"]:
+                account["since"] = now - MESH_BACKFILL_SECS
+            items = []
+            remaining = []
+            for obs in sorted(updated["observations"], key=lambda x: _num(x["radio"].get("observed_at")) or 0):
+                if obs["account_id"] != account_id:
+                    remaining.append(obs)
+                    continue
+                try:
+                    node = _wire_node(obs["radio"].get("node") or {}, now, now)
+                    identity = _identity(node) if node else ""
+                    item = _sample(obs["radio"], obs["sample_id"], account["radios"].get(identity, {}), now)
+                except (ValueError, TypeError, OverflowError) as e:
+                    updated["quarantine"].append({**obs, "error": str(e)})
+                    continue
+                previous = account["radios"].get(identity, {})
+                if item["radio"]["observed_at"] >= previous.get("observed_at", 0):
+                    account["radios"][identity] = item["radio"]
+                else:
+                    # Late observations cannot replace the chronological baseline,
+                    # but their sequence allocation must still be remembered.
+                    account["radios"][identity] = {**previous, "seq": item["radio"]["seq"]}
+                items.append(item)
+            updated["observations"] = remaining
+            covered = dict(account["sent"])
+            for batch in updated["batches"]:
+                if batch["account_id"] == account_id:
+                    for it in batch["items"]:
+                        covered[it["identity"]] = max(covered.get(it["identity"], 0), it["key"])
+            # Measured subjects need no additional discovery copy in this upload.
+            for it in items:
+                covered[it["identity"]] = max(covered.get(it["identity"], 0), it["key"])
+            # Defer excess discovery to the next tick; it remains in MeshStore.
+            # Never let new discovery prevent delivery of already staged health.
+            room = MAX_PENDING_SAMPLES - len(updated["observations"]) - len(updated["quarantine"]) - len(items) \
+                - sum(len(b["sample_ids"]) or 1 for b in updated["batches"])
+            reserved = len(_encode(updated["observations"] + updated["batches"] + updated["quarantine"]).encode("utf-8")) \
+                + 4096 * (len(updated["observations"]) + len(items))
+            room = min(room, max(0, (MAX_QUEUE_BYTES - reserved) // 4096))
+            for node in nodes:
+                if room <= 0:
+                    break
+                heard = _heard_ts(node, now)
+                if heard is None or heard < account["since"]:
+                    continue
+                wire = _wire_node(node, heard, now)
+                if wire is None:
+                    continue
+                identity = _identity(wire)
+                if int(heard) <= covered.get(identity, 0):
+                    continue
+                items.append({"wire": wire, "identity": identity, "key": int(heard)})
+                covered[identity] = int(heard)
+                room -= 1
+            # Allocate metadata once; enforce encoded bytes including the envelope.
+            while items:
+                updated["sequence_no"] = max(int(now), updated["sequence_no"] + 1)
+                body = {"now": _iso(now), "nodes": [], "batch_id": str(uuid.uuid4()),
+                        "reporter_id": self.reporter_id, "sequence_no": updated["sequence_no"]}
+                part, samples = [], []
+                while items and len(part) < MESH_CHUNK:
+                    candidate = items[0]
+                    tel = candidate["wire"].get("telemetry")
+                    if tel and len(samples) >= 100:
+                        break
+                    body["nodes"].append(candidate["wire"])
+                    if len(_encode(body).encode("utf-8")) > MAX_MESH_BYTES:
+                        body["nodes"].pop()
+                        if not part:
+                            raise MeshStateError("A mesh measurement exceeds the request size limit")
+                        break
+                    part.append(items.pop(0))
+                    if tel:
+                        samples.append(tel["sample_id"])
+                payload = _encode(body)
+                updated["batches"].append({"account_id": account_id, "payload": payload,
+                    "payload_sha256": hashlib.sha256(payload.encode("utf-8")).hexdigest(),
+                    "batch_id": body["batch_id"], "sequence_no": body["sequence_no"], "sample_ids": samples,
+                    "items": [{"identity": it["identity"], "key": it["key"]} for it in part],
+                    "status": "pending", "attempts": 0, "retry_at": 0, "error": ""})
+            self._capacity(updated)
+            self._commit(updated)
+
+    def pending(self, account_id: str) -> list[dict]:
+        with self._lock:
+            self._check()
+            return copy.deepcopy(sorted((b for b in self._data["batches"] if b["account_id"] == account_id and b["status"] == "pending"),
+                                        key=lambda b: b["sequence_no"]))
+
+    def failure(self, batch_id: str, error: str, *, rejected: bool = False, retry_at: float = 0) -> None:
+        with self._lock:
+            updated = copy.deepcopy(self._data)
+            batch = next(b for b in updated["batches"] if b["batch_id"] == batch_id)
+            batch.update(error=error, status="rejected" if rejected else "pending", retry_at=retry_at, attempts=batch["attempts"] + 1)
+            self._account(updated, batch["account_id"])["error"] = error
+            self._commit(updated)
+
+    def acknowledge(self, batch: dict, receipt: dict) -> dict:
+        with self._lock:
+            updated = copy.deepcopy(self._data)
+            account = self._account(updated, batch["account_id"])
+            if receipt["receipt_id"] in account["receipts"]:
+                raise MeshStateError("Receipt ID was already acknowledged; conflicting response retained for review")
+            record = {"receipt_id": receipt["receipt_id"], "account_id": batch["account_id"],
+                      "accepted_at": time.time(), "nodes": len(batch["items"]), "receipt": receipt}
+            account["receipts"][receipt["receipt_id"]] = record
+            for it in batch["items"]:
+                account["sent"][it["identity"]] = max(account["sent"].get(it["identity"], 0), it["key"])
+            account["error"] = ""
+            updated["batches"] = [b for b in updated["batches"] if b["batch_id"] != batch["batch_id"]]
+            self._commit(updated)
+            return copy.deepcopy(record)
+
+    def receipts(self, fingerprint: str = "") -> list[dict]:
+        with self._lock:
+            account = self._data.get("accounts", {}).get(self._data.get("credentials", {}).get(fingerprint), {})
+            return copy.deepcopy(sorted(account.get("receipts", {}).values(), key=lambda r: r["accepted_at"]))
+
+    def status(self, fingerprint: str = "") -> dict:
+        with self._lock:
+            account_id = self._data.get("credentials", {}).get(fingerprint, "")
+            batches = [b for b in self._data.get("batches", []) if account_id and b["account_id"] == account_id]
+            observations = [o for o in self._data.get("observations", []) if o["fingerprint"] == fingerprint or account_id and o["account_id"] == account_id]
+            quarantine = [o for o in self._data.get("quarantine", []) if o["fingerprint"] == fingerprint or account_id and o["account_id"] == account_id]
+            receipts = self.receipts(fingerprint)
+            account = self._data.get("accounts", {}).get(account_id, {})
+            retained = len(self._data.get("batches", [])) - len(batches) \
+                + len(self._data.get("observations", [])) - len(observations) \
+                + len(self._data.get("quarantine", [])) - len(quarantine)
+            return {"account_id": account_id, "pending": sum(b["status"] == "pending" for b in batches) + len(observations),
+                    "pending_samples": len(observations) + sum(len(b["sample_ids"]) for b in batches if b["status"] == "pending"),
+                    "rejected": sum(b["status"] == "rejected" for b in batches) + len(quarantine),
+                    "unverified": sum(o["account_id"] is None for o in observations),
+                    "retained": retained,
+                    "last_acknowledged": receipts[-1]["accepted_at"] if receipts else None,
+                    "error": self.error or self._data.get("credential_errors", {}).get(fingerprint) or account.get("error")
+                    or next((b["error"] for b in reversed(batches) if b["status"] == "rejected"), "")
+                    or (quarantine[-1]["error"] if quarantine else "")}
 
 
 def _mesh_json(text: str) -> dict[str, Any]:
     try:
         data = json.loads(text)
-    except ValueError:
+    except (ValueError, TypeError):
         return {}
     return data if isinstance(data, dict) else {}
 
 
-def mesh_accepted(status: int, text: str) -> bool:
-    """A 2xx answer, unless its body says ``"accepted": false``."""
-    return 200 <= status < 300 and _mesh_json(text).get("accepted", True) is not False
+def _valid_receipt(data: Any) -> bool:
+    """Shared validation for server responses and restored receipt history."""
+    if not isinstance(data, dict) or data.get("ok") is not True or not _uuid(data.get("receipt_id")) or not _uuid(data.get("batch_id")):
+        return False
+    samples, count = data.get("samples"), data.get("reports_accepted")
+    if type(count) is not int or not 0 <= count <= 100 or not isinstance(samples, list) or len(samples) != count:
+        return False
+    if any(not isinstance(s, dict) or not _uuid(s.get("sample_id")) for s in samples):
+        return False
+    if len({s["sample_id"] for s in samples}) != count:
+        return False
+    for rec in [data, *samples]:
+        for key in ("currency", "influence", "availability_seconds", "availability_currency", "availability_influence", "contribution_units"):
+            if key in rec and _num(rec[key], 0) is None:
+                return False
+        for key in ("currency", "availability_currency", "forwarded", "suppressed", "attempted", "failed"):
+            value = rec.get(key)
+            if value is not None and (type(value) is not int or not 0 <= value <= 2 ** 63 - 1):
+                return False
+        for key in ("policy_version", "outcome", "evidence", "observed_at"):
+            if key in rec and not isinstance(rec[key], str):
+                return False
+    return True
 
 
-def _log_body(text: str) -> str:
-    if not text:
-        return "(empty response body)"
-    if len(text) > LOG_BODY_MAX:
-        return f"{text[:LOG_BODY_MAX]}... ({len(text) - LOG_BODY_MAX} more characters)"
-    return text
+def mesh_accepted(status: int, text: str, batch: dict | None = None) -> bool:
+    """Validate the exact receipt, never acknowledge an arbitrary HTTP success."""
+    data = _mesh_json(text)
+    if not 200 <= status < 300 or not _valid_receipt(data) or batch is None:
+        return False
+    body = json.loads(batch["payload"]) if "payload" in batch else batch
+    expected = [n["telemetry"]["sample_id"] for n in body["nodes"] if "telemetry" in n]
+    return data["batch_id"] == body["batch_id"] and data["reports_accepted"] == len(expected) \
+        and {s["sample_id"] for s in data["samples"]} == set(expected)
 
 
 class WardriftClient:
@@ -438,64 +883,112 @@ class WardriftClient:
             return body, f"{code}: {msg}" if msg and msg != code else code
         return {}, "sequence_conflict"
 
+    def mesh_context(self) -> tuple[str, str]:
+        """Verify upload authority using the same key and endpoint as ingestion."""
+        try:
+            resp = self.session.get(f"{BASE}/ingest/mesh", headers={"Accept": "application/json", "User-Agent": MESH_UA},
+                                    timeout=self.timeout, allow_redirects=False)
+        except requests.RequestException as e:
+            return "", f"Mesh account verification failed: {type(e).__name__}"
+        data = _json(resp)
+        if resp.status_code != 200 or not _uuid(data.get("account_id")):
+            return "", _mesh_error(resp.status_code, resp.text) if resp.status_code != 200 else "Mesh account context is invalid"
+        return str(uuid.UUID(data["account_id"])), ""
+
     def upload_mesh(self, nodes: list[dict[str, Any]], radios: list[dict[str, Any]],
-                    reporter: MeshReporter) -> MeshResult:
-        """Send the nodes heard since the last accepted mesh upload, plus each
-        local radio's telemetry, in batches. Only accepted batches move the
-        per-node cursor, so whatever failed goes again next cycle."""
+                    reporter: MeshReporter, *, binding_valid=None) -> MeshResult:
+        """Stage, verify account, then send durable requests in reporter order.
+
+        Each client freezes one credential. An in-flight receipt always belongs to
+        that account, even if Settings changes; binding_valid prevents further sends.
+        """
         res = MeshResult()
-        for batch in reporter.plan(nodes, radios, time.time()):
-            part, body = batch["items"], batch["body"]
-            status, text = self.post_mesh(body)
-            res.responses.append((status, text))
-            if status in (400, 422) and not reporter.require_fix:
-                # The format allows leaving lat/lon out; if the server disagrees,
-                # resend the positioned nodes and leave the rest out from now on.
-                fixed = [it for it in part if "lat" in it["wire"]]
-                if fixed and len(fixed) < len(part):
-                    log.info("Wardrift mesh: batch refused, retrying without unpositioned nodes")
-                    st2, text2 = self.post_mesh(reporter.batch_body(fixed, time.time()))
-                    res.responses.append((st2, text2))
-                    if mesh_accepted(st2, text2):
-                        reporter.require_fix = True
-                        log.info("Wardrift mesh: nodes without a position are left out from now on")
-                        part, status, text = fixed, st2, text2
-            if not mesh_accepted(status, text):
-                res.ok, res.error = False, _mesh_error(status, text)
-                break
-            reporter.accept(part)
-            res.nodes += len(part)
-            res.telemetry += sum(1 for it in part if it.get("radio"))
+        fp = credential_fingerprint(self.api_key)
+        try:
+            deferred_capture = False
+            try:
+                reporter.stage(radios, fp)
+            except MeshQueueFull:
+                # Existing durable requests can free capacity. The caller retains
+                # unacknowledged capture IDs until a later successful stage.
+                deferred_capture = True
+            if not fp:
+                res.ok, res.error = False, "Set the shared Wardrift API key to deliver mesh measurements"
+                return res
+            if binding_valid is not None and not binding_valid():
+                res.ok, res.error = False, "Wardrift key changed; measurements remain queued for their original account"
+                return res
+            account_id, error = self.mesh_context()
+            if error:
+                error = error.replace(self.api_key, "[redacted]")
+                reporter.context_error(fp, error)
+                res.ok, res.error = False, error
+                return res
+            reporter.bind(fp, account_id)
+            # Drain old immutable requests before allocating new requests. Then
+            # drain staged observations, freeing room for any deferred handoff.
+            for phase in range(3 if deferred_capture else 2):
+                if phase:
+                    if binding_valid is not None and not binding_valid():
+                        res.ok, res.error = False, "Wardrift key changed; measurements remain queued"
+                        return res
+                    if phase == 2:
+                        reporter.stage(radios, fp)
+                    reporter.prepare(nodes, account_id, time.time())
+                for batch in reporter.pending(account_id):
+                    if binding_valid is not None and not binding_valid():
+                        res.ok, res.error = False, "Wardrift key changed; remaining batches are still queued"
+                        return res
+                    if batch.get("retry_at", 0) > time.time():
+                        res.ok, res.error = False, batch.get("error") or "Mesh upload retry is pending"
+                        return res
+                    status, response = self.post_mesh(batch["payload"])
+                    res.responses.append((status, response.replace(self.api_key, "[redacted]")[:LOG_BODY_MAX]))
+                    if not mesh_accepted(status, response, batch):
+                        error = _mesh_error(status, response)
+                        if self.api_key:
+                            error = error.replace(self.api_key, "[redacted]")
+                        definitive = status in (400, 409, 413, 422)
+                        delay = max(min(300, 2 ** min(batch["attempts"] + 1, 8)), getattr(self, "_mesh_retry_after", 0))
+                        reporter.failure(batch["batch_id"], error, rejected=definitive, retry_at=time.time() + delay)
+                        res.ok, res.error = False, error
+                        if definitive:
+                            continue  # retained for review; later valid reporter sequences can proceed
+                        return res
+                    receipt = _mesh_json(response)
+                    reporter.acknowledge(batch, receipt)
+                    res.nodes += len(batch["items"])
+                    res.telemetry += len(batch["sample_ids"])
+                    res.currency += receipt.get("currency", 0)
+                    res.influence += receipt.get("influence", 0.0)
+        except (MeshStateError, OSError, ValueError, TypeError) as e:
+            res.ok, res.error = False, str(e)
+            reporter.error = str(e)
         return res
 
-    def post_mesh(self, body: dict[str, Any]) -> tuple[int, str]:
-        """POST one batch body. The same body (same batch_id and sequence_no) is
-        resent after a network error, a 5xx or a sequence conflict. Every attempt
-        is logged with its HTTP status and response body."""
-        data = json.dumps(body)
-        nodes = body.get("nodes") or []
-        tag = (f"batch {str(body.get('batch_id'))[:8]} seq={body.get('sequence_no')} "
-               f"({len(nodes)} nodes, {len(data)} B)")
-        for n in nodes:
-            if "telemetry" in n:
-                log.info("Wardrift mesh telemetry: %s", json.dumps(n))
-        headers = {"Content-Type": "application/json", "Accept": "application/json",
-                   "User-Agent": MESH_UA}
-        status, text = 0, ""
-        for attempt in range(1, MESH_RETRIES + 2):
+    def post_mesh(self, body: dict[str, Any] | str) -> tuple[int, str]:
+        """One immutable request attempt; the ledger owns retry timing and bytes."""
+        data = body if isinstance(body, str) else _encode(body)
+        self._mesh_retry_after = 0.0
+        headers = {"Content-Type": "application/json", "Accept": "application/json", "User-Agent": MESH_UA}
+        try:
+            resp = self.session.post(f"{BASE}/ingest/mesh", data=data.encode("utf-8"),
+                                     headers=headers, timeout=self.timeout, allow_redirects=False)
+        except requests.RequestException as e:
+            return 0, f"Mesh network error: {type(e).__name__}"
+        retry = resp.headers.get("Retry-After", "")
+        if retry:
             try:
-                resp = self.session.post(f"{BASE}/ingest/mesh", data=data.encode("utf-8"),
-                                         headers=headers, timeout=self.timeout)
-                status, text = resp.status_code, resp.text
-            except requests.RequestException as e:
-                status, text = 0, f"network error: {type(e).__name__}: {e}"
-            log.info("Wardrift mesh POST /v1/ingest/mesh %s attempt %d: %s", tag, attempt,
-                     f"HTTP {status}: {_log_body(text)}" if status else text)
-            conflict = status == 409 and _mesh_json(text).get("error") == "sequence_conflict"
-            if not (status == 0 or status >= 500 or conflict) or attempt > MESH_RETRIES:
-                break
-            time.sleep(1.5 * attempt)
-        return status, text
+                delay = float(retry)
+            except (TypeError, ValueError):
+                try:
+                    delay = parsedate_to_datetime(retry).timestamp() - time.time()
+                except (ValueError, TypeError, OverflowError):
+                    delay = 0
+            if math.isfinite(delay):
+                self._mesh_retry_after = max(0, min(86400, delay))
+        log.info("Wardrift mesh POST: HTTP %s (%s request bytes)", resp.status_code, len(data.encode("utf-8")))
+        return resp.status_code, resp.text
 
 
 def _mesh_error(status: int, text: str) -> str:

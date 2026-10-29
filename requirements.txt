@@ -2,7 +2,8 @@ requests>=2.31
 pyserial>=3.5
 pystray>=0.19.5
 Pillow>=10.0
-meshcore>=1.1.0
+# Telemetry query APIs and connection cancellation cleanup verified in 2.3.17.
+meshcore>=2.3.17,<3
 # Wardriving: Bluetooth scanning (also used by MeshCore over BLE) and Windows location.
 bleak>=0.22
 winrt-Windows.Devices.Geolocation>=3.0
@@ -14,7 +15,8 @@ cryptography>=42
 
 # Optional: read Meshtastic devices too (in addition to MeshCore).
 #   pip install meshtastic
-meshtastic>=2.3
+# Health presence, LocalStats relay counters and BLE verified in 2.5.5 and 2.7.10.
+meshtastic>=2.5.5,<3
 
 # Optional: a native desktop window for the dashboard instead of a browser tab.
 # If not installed, the dashboard opens in your default browser (fully supported).

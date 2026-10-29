@@ -24,7 +24,7 @@ import pystray
 from PIL import Image, ImageDraw
 
 from . import APP_NAME, __version__, adsb, autostart, mayhem, traymenu, updater, watchdog
-from .config import Config, INTERVAL_CHOICES_HOURS, config_dir
+from .config import Config, INTERVAL_CHOICES_HOURS, config_dir, mesh_devices
 from .core import UploaderCore
 from .logutil import setup_logging
 from .poller import Poller
@@ -243,8 +243,13 @@ class UploaderApp:
             "hw_off", "gps_net_port", "wigle_api_name", "wigle_api_token", "wpasec_key",
         }
         clean = {k: v for k, v in values.items() if k in allowed}
+        if "mesh_devices" in clean:
+            clean["mesh_devices"] = mesh_devices(
+                clean["mesh_devices"], transport=clean.get("mesh_transport", self.cfg.get("mesh_transport", "serial")),
+                ble_address=clean.get("mesh_ble_address", self.cfg.get("mesh_ble_address", "auto")))
         key_changed = "api_key" in clean and clean["api_key"] != self.cfg.get("api_key")
         self.cfg.update(clean)
+        self.core.mesh_config_changed()
         self.cfg.save()
         autostart.sync(bool(self.cfg.get("start_on_boot")))
         self.scheduler.reschedule()
@@ -327,7 +332,7 @@ class UploaderApp:
             self.state.save_collected(force=True)
         except Exception:
             pass
-        for stopper in (self.scheduler.stop, self.poller.stop, self.core.capture.stop, self.core.wardriver.stop,
+        for stopper in (self.scheduler.stop, self.poller.stop, self.core.stop_mesh, self.core.wardriver.stop,
                         self.server.stop, adsb.stop_dump1090, mayhem.stop):
             try:
                 stopper()

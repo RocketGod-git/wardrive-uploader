@@ -5,6 +5,7 @@ dashboard's JSON API. One instance is created in app startup and passed around.
 from __future__ import annotations
 
 import collections
+import copy
 import json
 import os
 import tempfile
@@ -106,6 +107,9 @@ class LiveState:
         self.leaderboard_ts: float = 0.0
         self.wigle: dict[str, Any] = {}       # WiGLE /stats/user for the YOU card
         self._receipts: dict[str, list[dict[str, Any]]] = {}
+        # MeshReporter owns the durable receipts; these are the selected account's display rows.
+        self._mesh_receipts: list[dict[str, Any]] = []
+        self.wardrift_mesh: dict[str, Any] = {}
 
         # Prerequisites
         self.prereqs: dict[str, Any] = {}
@@ -412,6 +416,33 @@ class LiveState:
                 row[k] = int(row.get(k) or 0) + int(v or 0)
         self._save_history()
 
+    def reconcile_mesh(self, status: dict[str, Any], receipts: list[dict[str, Any]]) -> None:
+        """Show acknowledged mesh receipts for the selected account without replaying awards."""
+        rows, seen = [], set()
+        account = status.get("account_id")
+        for record in receipts:
+            receipt = record.get("receipt") or {}
+            rid = receipt.get("receipt_id")
+            if not account or record.get("account_id") != account or not rid or rid in seen:
+                continue
+            seen.add(rid)
+            samples = receipt.get("samples") or []
+            row = {"t": record["accepted_at"], "kind": "mesh", "ok": True,
+                   "receipt_id": rid, "batch_id": receipt.get("batch_id"),
+                   "account_id": account, "sent": record.get("nodes", 0),
+                   "telemetry": receipt.get("reports_accepted", 0),
+                   "currency": receipt.get("currency", 0), "influence": receipt.get("influence", 0),
+                   "availability_seconds": sum(s.get("availability_seconds") or 0 for s in samples),
+                   "summary": f"{receipt.get('reports_accepted', 0)} health samples acknowledged, "
+                              f"+{receipt.get('currency', 0)} currency, +{receipt.get('influence', 0):g} influence"}
+            for key in ("forwarded", "suppressed", "attempted", "failed"):
+                known = [s[key] for s in samples if s.get(key) is not None]
+                row[key] = sum(known) if known else None
+            rows.append(row)
+        with self._lock:
+            self.wardrift_mesh = copy.deepcopy(status)
+            self._mesh_receipts = sorted(rows, key=lambda r: r["t"])[-500:]
+
     # -- events ------------------------------------------------------------
     def event(self, msg: str) -> None:
         with self._lock:
@@ -453,6 +484,7 @@ class LiveState:
                 },
                 "aircraft_seen_ts": self.aircraft_seen_ts,
                 "mesh_seen_ts": self.mesh_seen_ts,
+                "wardrift_mesh": copy.deepcopy(self.wardrift_mesh),
                 "adsb_source_ok": self.adsb_source_ok,
                 "session_uploaded": self.session_uploaded,
                 "collected": {"aircraft": len(self._seen_aircraft), "mesh": len(self._seen_mesh),
@@ -513,4 +545,10 @@ class LiveState:
                 except OSError:
                     pass
                 self._receipts[site] = rows[-500:]
+            if site == "wardrift":
+                rows = [r for r in self._receipts[site] if r.get("kind") != "mesh"]
+                if not self._mesh_receipts:
+                    return list(reversed(rows))
+                rows += self._mesh_receipts
+                return copy.deepcopy(sorted(rows, key=lambda r: r.get("t") or 0, reverse=True)[:500])
             return list(reversed(self._receipts[site]))

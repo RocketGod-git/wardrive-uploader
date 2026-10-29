@@ -116,8 +116,13 @@ class UploaderCore:
         self.capture = mesh_capture.MeshCaptureService(
             persist_path=str(config_dir() / "mesh_store.json"))
         self.wardrift_mesh = wardrift.MeshReporter(config_dir() / "wardrift_mesh.json")
-        self._wardrift_mesh_lock = threading.Lock()   # cycle and radio report share sequence numbers
+        self._wardrift_mesh_lock = threading.RLock()   # cycle and radio report share sequence numbers
+        self._mesh_stopping = threading.Event()
+        self._mesh_schedule_lock = threading.Lock()
+        self._mesh_upload_thread: threading.Thread | None = None
         self._wardrift_report_error = ""
+        self.capture.set_credential_fingerprint(wardrift.credential_fingerprint(self.cfg.get("wardrift_api_key")))
+        self._refresh_mesh_delivery()
         self._wd_boards: dict[tuple[str, str], dict] = {}
         self._wigle_cache: dict[str, tuple[float, dict]] = {}
         self.wardriver = Wardriver(on_event=self.state.event)
@@ -209,7 +214,8 @@ class UploaderCore:
         """Start, stop or reconfigure wardriving to match the settings. Ports that
         belong to mesh radios or the PortaPack are never opened as a GPS."""
         det = det or self._last_detect
-        busy = {d.get("port") for d in (self.cfg.get("mesh_devices") or []) if d.get("port")}
+        busy = {d.get("port") for d in (self.cfg.get("mesh_devices") or [])
+                if d.get("port") and d.get("transport", "serial") == "serial"}
         if det:
             busy |= {d.port for d in det.serial_ports if d.is_mesh_candidate or d.is_portapack}
         try:
@@ -251,15 +257,19 @@ class UploaderCore:
         80, MeshCore ~350) are kept anyway: every node whose advert or position
         crossed the antenna, including far multi-hop ones.
         """
+        if self._mesh_stopping.is_set():
+            return 0
         if not self.cfg.get("mesh_enabled", True):
             self.capture.stop()
+            self._stage_mesh_samples()
             return 0
         cfg = self.cfg.as_dict()
         devices = []
         for dev in (cfg.get("mesh_devices") or []):
             d = dict(dev)
-            d["port"] = detect.pick_mesh_port(dev.get("port", "auto"), self._last_detect) \
-                or dev.get("port", "auto")
+            if d.get("transport", "serial") == "serial":
+                d["port"] = detect.pick_mesh_port(dev.get("port", "auto"), self._last_detect) \
+                    or dev.get("port", "auto")
             devices.append(d)
         # Reconcile is idempotent: starts a persistent worker per enabled device,
         # stops workers for removed/disabled ones. The workers hold the
@@ -270,8 +280,10 @@ class UploaderCore:
             advert_minutes=int(cfg.get("mesh_advert_minutes", 60) or 0),
             transport=cfg.get("mesh_transport", "serial"),
             ble_address=cfg.get("mesh_ble_address", "auto"),
+            credential_fingerprint=wardrift.credential_fingerprint(cfg.get("wardrift_api_key")),
         )
         self.capture.persist()          # save the growing store (throttled)
+        self._stage_mesh_samples()
         # Drop garbage positions (corrupt Position packets land nodes mid-ocean)
         # before they skew the map or upload with a bad location.
         nodes = mesh.filter_outlier_positions(self.capture.snapshot())
@@ -281,6 +293,49 @@ class UploaderCore:
         self.state.update_device("mesh", connected=any_conn,
                                  contacts=len(nodes), devices=status)
         return len(nodes)
+
+    def _refresh_mesh_delivery(self, error: str = "") -> None:
+        fingerprint = wardrift.credential_fingerprint(self.cfg.get("wardrift_api_key"))
+        status = self.wardrift_mesh.status(fingerprint)
+        receipts = self.wardrift_mesh.receipts(fingerprint)
+        # Settings can change while the reporter is finishing an old-account
+        # request. Never publish a snapshot selected with the former key.
+        if fingerprint != wardrift.credential_fingerprint(self.cfg.get("wardrift_api_key")):
+            return
+        if error:
+            status["error"] = error
+        self.state.reconcile_mesh(status, receipts)
+
+    def _stage_mesh_samples(self, *, raise_errors: bool = False) -> None:
+        # A request may be waiting on HTTP. Leave observations in the capture
+        # queue for the next poll instead of blocking live discovery behind it.
+        if not self._wardrift_mesh_lock.acquire(blocking=False):
+            return
+        try:
+            samples = self.capture.pending_samples()
+            if samples:
+                ids = self.wardrift_mesh.stage(samples)
+                self.capture.acknowledge_samples(ids)
+            self._refresh_mesh_delivery()
+        except Exception as e:
+            self._refresh_mesh_delivery(str(e))
+            log.error("Could not preserve Wardrift mesh measurements: %s", e)
+            if raise_errors:
+                raise
+        finally:
+            self._wardrift_mesh_lock.release()
+
+    def mesh_config_changed(self) -> None:
+        """Stamp future observations with the newly selected credential only."""
+        self.capture.set_credential_fingerprint(wardrift.credential_fingerprint(self.cfg.get("wardrift_api_key")))
+        self._refresh_mesh_delivery()
+
+    def stop_mesh(self) -> None:
+        self._mesh_stopping.set()
+        self.capture.stop()
+        with self._wardrift_mesh_lock:
+            self._stage_mesh_samples(raise_errors=True)
+            self.wardrift_mesh.save()
 
     def refresh_stats(self) -> None:
         self.refresh_wardrift()
@@ -480,16 +535,26 @@ class UploaderCore:
         its own, so a failure here never affects the WDGWars mesh upload.
         ``quiet`` is the periodic radio report: it logs to the activity feed only
         when it fails, and only once per distinct error."""
-        with self._wardrift_mesh_lock:
+        if self._mesh_stopping.is_set() or not self._wardrift_mesh_lock.acquire(blocking=False):
+            rep.wardrift_mesh = "mesh upload already running" if not self._mesh_stopping.is_set() else "stopping"
+            return
+        try:
             try:
                 if poll:
                     self.poll_mesh()
+                else:
+                    self._stage_mesh_samples()
                 nodes = mesh.filter_outlier_positions(self.capture.snapshot())
                 res = wardrift.WardriftClient(key, timeout=30.0).upload_mesh(
-                    nodes, self.capture.local_radios(), self.wardrift_mesh)
+                    nodes, [], self.wardrift_mesh,
+                    binding_valid=lambda: not self._mesh_stopping.is_set()
+                    and self.cfg.get("mesh_enabled", True)
+                    and (self.cfg.get("wardrift_api_key") or "").strip() == key)
                 rep.wardrift_mesh = res.summary()
-                if not quiet and (res.nodes or res.error):
-                    self.state.add_receipt("wardrift", "mesh", not res.error, res.summary(), sent=res.nodes)
+                # Every tick reconciles authoritative receipts, even when its
+                # activity-feed entry is suppressed. The current key selects the
+                # display account, so an old in-flight response cannot relabel it.
+                self._refresh_mesh_delivery(res.error if (self.cfg.get("wardrift_api_key") or "").strip() == key else "")
                 if res.error:
                     rep.errors.append(f"wardrift mesh: {res.error}")
                     msg = ("Wardrift mesh partial: " if res.nodes
@@ -506,18 +571,25 @@ class UploaderCore:
             except Exception as e:
                 rep.wardrift_mesh = f"error: {e}"
                 rep.errors.append(f"wardrift mesh: {e}")
+                self._refresh_mesh_delivery(str(e))
                 log.exception("Wardrift mesh upload failed")
+        finally:
+            self._wardrift_mesh_lock.release()
 
     def wardrift_mesh_tick(self) -> None:
         """Send a radio report between uploads. Wardrift counts uptime only from
         reports at most an hour apart, so the poller calls this every 15 minutes.
         It runs on its own thread so a slow request never stalls live polling."""
         key = (self.cfg.get("wardrift_api_key") or "").strip()
-        if not key or not self.cfg.get("mesh_enabled", True) or self._wardrift_mesh_lock.locked():
+        if not key or not self.cfg.get("mesh_enabled", True) or self._mesh_stopping.is_set():
             return
-        threading.Thread(target=self._upload_wardrift_mesh, args=(key, CycleReport()),
-                         kwargs={"poll": False, "quiet": True},
-                         name="wdgw-wardrift-mesh", daemon=True).start()
+        with self._mesh_schedule_lock:
+            if self._mesh_upload_thread and self._mesh_upload_thread.is_alive():
+                return
+            self._mesh_upload_thread = threading.Thread(
+                target=self._upload_wardrift_mesh, args=(key, CycleReport()),
+                kwargs={"poll": False, "quiet": True}, name="wdgw-wardrift-mesh", daemon=True)
+            self._mesh_upload_thread.start()
 
     def _run_cycle_inner(self, rep: CycleReport) -> CycleReport:
         cfg = self.cfg.as_dict()

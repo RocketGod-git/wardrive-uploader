@@ -24,11 +24,14 @@ the feed, accumulator, upload and sent-history dedup all work unchanged.
 from __future__ import annotations
 
 import asyncio
+import copy
+import json
 import logging
+import math
 import threading
 import time
 import uuid
-from typing import Any
+from typing import Any, Callable
 
 from . import mesh
 
@@ -50,6 +53,9 @@ _REQUEST_RETRY_SECS = 4.0
 
 # Seconds between reads of a MeshCore companion's own battery and counters.
 _RADIO_SAMPLE_SECS = 300
+_QUERY_TIMEOUT = 10.0
+_SAMPLE_CAP = 10000
+_SAMPLE_BYTE_CAP = 20_000_000
 
 # Ports whose DTR/RTS lines reset the attached board. These are opened with both
 # lines held low:
@@ -231,116 +237,233 @@ class _PositionRequests:
         return req
 
 
-class MeshtasticWorker(_PositionRequests, threading.Thread):
+class _SampleWorker:
+    """Workers publish copies; only the service owns the pending handoff queue."""
+    def _publish(self, sample: dict) -> None:
+        # Once shutdown begins, an outstanding radio query cannot create work
+        # after the core's final durable handoff.
+        if self._stop_event.is_set():
+            return
+        sample = copy.deepcopy(sample)
+        sample.setdefault("capture_id", str(uuid.uuid4()))
+        if self._sample_sink:
+            try:
+                self._sample_sink(sample)
+            except Exception as e:
+                # Wardrift delivery backpressure must not disconnect the shared
+                # radio or interrupt discovery for other upload destinations.
+                self.error = f"Could not queue Wardrift health: {e}"
+                log.error("%s", self.error)
+        self.radio = sample
+
+
+class MeshtasticWorker(_PositionRequests, _SampleWorker, threading.Thread):
     def __init__(self, port: str, store: MeshStore, hop_limit: int = 0,
-                 advert_minutes: int = 60) -> None:
-        super().__init__(name=f"wdgw-cap-mt-{port}", daemon=True)
+                 advert_minutes: int = 60, transport: str = "serial",
+                 ble_address: str = "auto", sample_sink: Callable | None = None) -> None:
+        super().__init__(name=f"wdgw-cap-mt-{port or ble_address}", daemon=True)
         self.port = port
         self.store = store
         self.hop_limit = hop_limit
         self.advert_minutes = advert_minutes
-        self._stop = threading.Event()
+        self.transport = transport
+        self.ble_address = ble_address
+        self._sample_sink = sample_sink
+        self._stop_event = threading.Event()
         self.connected = False
         self.heard = 0
-        self.radio: dict | None = None    # latest reading of the radio itself
-        self._session_id = ""
-        self._metrics_at: float | None = None
-        self._stats_at: float | None = None
+        self.radio: dict | None = None
+        self.error = ""
+        self._local_num: int | None = None
+        self._iface = None
 
     def stop(self) -> None:
-        self._stop.set()
+        self._stop_event.set()
 
     def run(self) -> None:
-        while not self._stop.is_set():
+        while not self._stop_event.is_set():
             try:
                 self._session()
-            except Exception as e:  # noqa: BLE001
-                log.warning("meshtastic capture on %s dropped: %s", self.port, e)
+            except Exception as e:
+                self.error = str(e)
+                log.warning("meshtastic capture on %s dropped: %s", self.port or self.ble_address, e)
             self.connected = False
-            self._stop.wait(15)     # backoff before reconnect
+            self._stop_event.wait(15)
 
     def _capture_all(self, iface) -> None:
+        # A cached table is discovery only, never fresh telemetry evidence.
         for nid, node in dict(getattr(iface, "nodes", None) or {}).items():
-            d = mesh.meshtastic_node_to_display(nid, node)
-            if d:
-                self.store.put(d)
+            display = mesh.meshtastic_node_to_display(nid, node)
+            self.store.put(display)
+            if display and node.get("num") == self._local_num and self._local_num is not None:
+                # Preserve the existing advertised-position display without
+                # publishing cached telemetry to Wardrift's measurement queue.
+                self.radio = {**(self.radio or {}), "node": display}
 
     def _apply_position(self, iface) -> None:
-        """Set a queued fixed position. The radio stores it and broadcasts it as
-        its own location from then on."""
         req = self._take_position_request()
         if not req:
             return
         lat, lon = req
         try:
             iface.localNode.setFixedPosition(lat, lon, 0)
-            # Reflect it locally now instead of waiting for the radio's next position packet.
             me = iface.getMyNodeInfo()
             if isinstance(me, dict):
                 me.setdefault("position", {}).update(latitude=lat, longitude=lon)
+                node = mesh.meshtastic_node_to_display((me.get("user") or {}).get("id", ""), me)
+                if node:
+                    self.radio = {**(self.radio or {}), "node": node}
             self.position_status = "set"
             log.info("set fixed position on %s: %.5f, %.5f", self.port, lat, lon)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             self.position_status = f"failed: {e}"
             log.warning("could not set position on %s: %s", self.port, e)
-        self._sample_radio(iface)
+        # Manual position is an advertisement, never an internal GNSS fix.
 
-    def _sample_radio(self, iface) -> None:
-        """Record the radio's own DeviceMetrics and LocalStats for the Wardrift
-        mesh upload. Both arrive as telemetry packets from the radio itself."""
+    @staticmethod
+    def _group(tel: dict, snake: str, camel: str) -> dict | None:
+        raw = tel.get("raw")
+        if raw is not None and hasattr(raw, "HasField"):
+            try:
+                if not raw.HasField(snake):
+                    return None
+                msg = getattr(raw, snake)
+                return {f.json_name: getattr(msg, f.name) for f in msg.DESCRIPTOR.fields
+                        if not f.has_presence or msg.HasField(f.name)}
+            except (ValueError, AttributeError):
+                return None
+        # Dict-only callbacks preserve only explicit keys. Missing keys cannot
+        # safely imply zero without a known, fresh protobuf message descriptor.
+        group = tel.get(camel)
+        return dict(group) if isinstance(group, dict) else None
+
+    @staticmethod
+    def _observed_at(tel: dict, received_at: float) -> float:
+        # Telemetry.time is acquisition time (Unix seconds), with zero meaning
+        # unset. Buffered local packets must not become fresh on reconnect.
+        raw = tel.get("raw")
+        stamp = getattr(raw, "time", tel.get("time", 0))
+        if stamp is None or stamp == 0 and not isinstance(stamp, bool):
+            return received_at
+        if (not isinstance(stamp, (int, float)) or isinstance(stamp, bool)
+                or not math.isfinite(stamp) or stamp != int(stamp)
+                or not 1577836800 <= stamp <= received_at + 120):
+            raise ValueError("Radio telemetry clock is invalid; measurement was not redated")
+        return float(stamp)
+
+    def _on_receive(self, packet, interface, iface) -> None:
+        if interface is not iface or self._stop_event.is_set():
+            return
         try:
-            me = iface.getMyNodeInfo() or {}
-        except Exception:  # noqa: BLE001
-            return
-        user = me.get("user") or {}
-        num = me.get("num")
-        nid = user.get("id") or (f"!{num:08x}" if isinstance(num, int) else "")
-        node = mesh.meshtastic_node_to_display(nid, me)
-        if not node or len(node["node_id"]) != 8:
-            return
-        now = time.time()
-        dm = me.get("deviceMetrics") or {}
-        ls = me.get("localStats") or {}
-        level = dm.get("batteryLevel")
-        counters: dict[str, Any] = {}
-        if ls:
-            # Protobuf-to-dict leaves out zero values, so a missing counter is 0.
-            counters = {"num_packets_tx": ls.get("numPacketsTx", 0),
-                        "num_packets_rx": ls.get("numPacketsRx", 0),
-                        "num_tx_relay": ls.get("numTxRelay", 0),
-                        "num_tx_relay_canceled": ls.get("numTxRelayCanceled", 0)}
-        # Uptime from whichever packet is newer: DeviceMetrics reach the computer
-        # every minute, LocalStats every 15 minutes.
-        if dm.get("uptimeSeconds") is not None and (
-                not ls or (self._metrics_at or 0) >= (self._stats_at or 0)):
-            uptime, uptime_at = dm.get("uptimeSeconds"), self._metrics_at
-        else:
-            uptime, uptime_at = (ls.get("uptimeSeconds") if ls else None), self._stats_at
-        md = getattr(iface, "metadata", None)
-        self.radio = {
-            "protocol": "meshtastic",
-            "transport": "usb_serial",
-            "session": self._session_id,
-            "node": node,
-            "observed_at": now,
-            "firmware_version": getattr(md, "firmware_version", "") or None,
-            "uptime_seconds": uptime,
-            "uptime_at": uptime_at or now,
-            # 101 means external power, not a battery reading.
-            "battery_level": level if isinstance(level, int) and 0 <= level <= 100 else None,
-            "voltage": dm.get("voltage"),
-            "health_at": (self._metrics_at or now) if dm else None,
-            "counters": counters,
-            "counters_at": (self._stats_at or now) if ls else None,
-            "profile": ("meshtastic-localstats-v1" if ls else
-                        "meshtastic-devicemetrics-v1" if dm else "meshtastic-basic-v1"),
-        }
+            now = time.time()
+            frm = packet.get("fromId") or packet.get("from")
+            nodes = getattr(iface, "nodes", None) or {}
+            rec = nodes.get(frm) or nodes.get(str(frm))
+            if rec:
+                node = mesh.meshtastic_node_to_display(frm, rec)
+                if node:
+                    node["heard_ts"] = now
+                    self.store.put(node)
+                    self.heard += 1
+            if self._local_num is None or packet.get("from") != self._local_num:
+                return
+            tel = (packet.get("decoded") or {}).get("telemetry")
+            if not isinstance(tel, dict):
+                return
+            dm = self._group(tel, "device_metrics", "deviceMetrics")
+            ls = self._group(tel, "local_stats", "localStats")
+            if dm is None and ls is None:
+                return
+            observed = self._observed_at(tel, now)
+            nid = f"!{self._local_num:08x}"
+            me = nodes.get(nid) or {"num": self._local_num, "user": {"id": nid}}
+            node = mesh.meshtastic_node_to_display(nid, me)
+            if not node:
+                return
+            # Cached NODEINFO supplies display fields, never the authoritative
+            # local identity established by the connection handshake.
+            node["node_id"] = f"{self._local_num:08x}"
+            md = getattr(iface, "metadata", None)
+            firmware = getattr(md, "firmware_version", "") or "unknown"
+            for group, is_stats in ((dm, False), (ls, True)):
+                if group is None:
+                    continue
+                health = {}
+                for wire, key in (("voltage", "voltage"), ("channel_utilization", "channelUtilization"),
+                                  ("air_util_tx", "airUtilTx"), ("noise_floor_dbm", "noiseFloor")):
+                    if key in group:
+                        health[wire] = group[key]
+                if "batteryLevel" in group:
+                    level = group["batteryLevel"]
+                    valid_level = type(level) is int and 0 <= level <= 2 ** 32 - 1
+                    external = valid_level and level > 100
+                    health["battery_level"] = None if external else level
+                    health["external_power"] = external if valid_level else None
+                counters = {}
+                if is_stats:
+                    for wire, key in (("num_packets_tx", "numPacketsTx"), ("num_packets_rx", "numPacketsRx"),
+                                      ("num_packets_rx_bad", "numPacketsRxBad"), ("num_rx_dupe", "numRxDupe"),
+                                      ("num_tx_relay", "numTxRelay"), ("num_tx_relay_canceled", "numTxRelayCanceled"),
+                                      ("num_tx_dropped", "numTxDropped"), ("num_online_nodes", "numOnlineNodes"),
+                                      ("num_total_nodes", "numTotalNodes")):
+                        if key in group:
+                            counters[wire] = group[key]
+                sample = {
+                    "protocol": "meshtastic", "transport": "ble" if self.transport == "ble" else "usb_serial",
+                    "node": node, "observed_at": observed,
+                    "host_received_at": now,
+                    "firmware_version": firmware,
+                    "profile": "meshtastic-localstats-v1" if is_stats else "meshtastic-devicemetrics-v1",
+                    "uptime_seconds": group.get("uptimeSeconds"),
+                    "uptime_at": observed if "uptimeSeconds" in group else None,
+                    "health": health, "health_at": observed if health else None,
+                    "battery_level": health.get("battery_level"), "voltage": health.get("voltage"),
+                    "counters": counters, "counters_at": observed if is_stats else None,
+                    "role": str((me.get("user") or {}).get("role") or "CLIENT"),
+                }
+                self._publish(sample)
+            if self.error.startswith("Radio telemetry clock is invalid"):
+                self.error = ""
+        except Exception as e:
+            self.error = str(e)
+            log.warning("could not capture local Meshtastic telemetry: %s", e)
 
     def _open_iface(self, deadline: float = _NODEDB_WAIT + 30.0):
-        """Open the SerialInterface in a sub-thread with a hard deadline - the
-        meshtastic connect can deadlock un-interruptibly on a wedged port, which must
-        not block the worker forever (it retries instead).
+        """Construct the official interface with cancellation-aware cleanup.
+
+        A timed-out third-party constructor reserves its endpoint until it returns;
+        opening a replacement beside an unclosed constructor would leak handles.
         """
+        if self.transport == "ble":
+            import inspect
+            from meshtastic.ble_interface import BLEInterface
+            if not self.ble_address or self.ble_address.lower() == "auto":
+                raise ValueError("Set an explicit Meshtastic BLE address in Settings")
+            class _ClosingBLEInterface(BLEInterface):
+                def __init__(self, **kwargs):
+                    # The supported library can fail after connecting but before
+                    # registering its exit handler. Keep partial construction
+                    # closeable on pairing/config/notification failures as well.
+                    self._exit_handler = None
+                    self._want_receive = False
+                    self._receiveThread = None
+                    self.client = None
+                    try:
+                        super().__init__(**kwargs)
+                    except BaseException:
+                        try:
+                            self.close()
+                        except Exception:
+                            log.debug("Could not close failed BLE construction", exc_info=True)
+                        raise
+
+            # Older supported SDKs have a fixed internal configuration timeout.
+            # The outer connection deadline/endpoint reservation applies to both.
+            options = {"address": self.ble_address}
+            if "timeout" in inspect.signature(BLEInterface).parameters:
+                options["timeout"] = int(deadline)
+            factory = lambda: _ClosingBLEInterface(**options)
+            return self._open_bounded(factory, deadline)
         from meshtastic.serial_interface import SerialInterface
 
         class _PatientSerialInterface(SerialInterface):
@@ -379,91 +502,97 @@ class MeshtasticWorker(_PositionRequests, threading.Thread):
             _NO_RESET_PORTS.add(self.port)
         else:
             _NO_RESET_PORTS.discard(self.port)
-        box: dict[str, Any] = {}
+        return self._open_bounded(lambda: _PatientSerialInterface(devPath=self.port), deadline)
 
-        def _open():
+    def _open_bounded(self, factory, deadline):
+        box: dict[str, Any] = {}
+        cancelled = threading.Event()
+
+        def opening():
             try:
-                box["iface"] = _PatientSerialInterface(devPath=self.port)
-            except Exception as e:  # noqa: BLE001
+                iface = factory()
+                if cancelled.is_set():
+                    iface.close()
+                else:
+                    box["iface"] = iface
+            except Exception as e:
                 box["err"] = e
 
-        t = threading.Thread(target=_open, name=f"open-{self.port}", daemon=True)
-        t.start()
-        t.join(deadline)
-        if "iface" in box:
-            return box["iface"]
+        opener = threading.Thread(target=opening, name=f"open-{self.port or self.ble_address}", daemon=True)
+        opener.start()
+        end = time.monotonic() + deadline
+        while opener.is_alive():
+            opener.join(0.1)
+            if self._stop_event.is_set() or time.monotonic() >= end:
+                cancelled.set()
+                self.error = "Radio connection did not close; endpoint held until cleanup finishes"
+                # Keep the worker/endpoint reserved while a library constructor
+                # still owns it. Never open another connection beside a hung one.
+        if self._stop_event.is_set() or time.monotonic() >= end:
+            cancelled.set()
+        if cancelled.is_set():
+            if "iface" in box:
+                box["iface"].close()
+            raise TimeoutError(self.error or "Radio connection canceled before use")
         if "err" in box:
             raise box["err"]
-        raise TimeoutError(f"meshtastic connect on {self.port} exceeded {deadline:.0f}s")
+        return box["iface"]
 
     def _session(self) -> None:
         from pubsub import pub
 
         iface = self._open_iface()
+        self._iface = iface
         self.connected = True
-        self._session_id = uuid.uuid4().hex
-        self._metrics_at = self._stats_at = None
-        log.info("meshtastic capture connected on %s", self.port)
-        if self.hop_limit:
-            try:
-                mesh._maybe_set_meshtastic_hops(iface, self.hop_limit)
-            except Exception:
-                pass
+        self.error = ""
+        # Only the handshake identifies this subject radio. A foreign interface's
+        # callback or a cached record can never establish it.
+        self._local_num = getattr(getattr(iface, "myInfo", None), "my_node_num", None)
 
-        def on_recv(packet, interface):   # fires on the lib's reader thread
-            try:
-                frm = packet.get("fromId") or packet.get("from")
-                nodes = getattr(interface, "nodes", None) or {}
-                rec = nodes.get(frm) or nodes.get(str(frm))
-                if rec:
-                    d = mesh.meshtastic_node_to_display(frm, rec)
-                    if d:
-                        d["heard_ts"] = time.time()
-                        self.store.put(d)
-                        self.heard += 1
-                tel = (packet.get("decoded") or {}).get("telemetry") or {}
-                my_num = getattr(getattr(interface, "myInfo", None), "my_node_num", None)
-                if tel and my_num is not None and packet.get("from") == my_num:
-                    if "deviceMetrics" in tel:
-                        self._metrics_at = time.time()
-                    if "localStats" in tel:
-                        self._stats_at = time.time()
-            except Exception:
-                pass
+        def on_recv(packet, interface):
+            self._on_receive(packet, interface, iface)
 
-        sub = pub.subscribe(on_recv, "meshtastic.receive")
+        subscribed = False
         try:
-            self._capture_all(iface)          # seed from the device's current DB
-            self._sample_radio(iface)
+            pub.subscribe(on_recv, "meshtastic.receive")
+            subscribed = True
+            if self.hop_limit:
+                try:
+                    mesh._maybe_set_meshtastic_hops(iface, self.hop_limit)
+                except Exception:
+                    pass
+            self._capture_all(iface)
             last_advert = time.time()
-            while not self._stop.is_set():
-                self._stop.wait(15)
-                if self._stop.is_set():
-                    break
-                self._capture_all(iface)      # re-sweep the merged DB (cheap, in-memory)
-                self._sample_radio(iface)
+            while not self._stop_event.wait(1):
+                connected = getattr(iface, "isConnected", None)
+                if connected is not None and not connected.is_set():
+                    raise ConnectionError("Meshtastic disconnected")
+                self._capture_all(iface)
                 self._apply_position(iface)
-                if self.advert_minutes and (time.time() - last_advert) >= self.advert_minutes * 60:
+                if self.advert_minutes and time.time() - last_advert >= self.advert_minutes * 60:
                     mesh._meshtastic_announce(iface)
                     last_advert = time.time()
         finally:
-            try:
-                pub.unsubscribe(sub)
-            except Exception:
-                pass
+            self.connected = False
+            self._local_num = None
+            if subscribed:
+                try:
+                    pub.unsubscribe(on_recv, "meshtastic.receive")
+                except Exception:
+                    log.debug("Meshtastic callback was already unsubscribed", exc_info=True)
             try:
                 iface.close()
-            except Exception:
-                pass
+            finally:
+                self._iface = None
 
 
 # ---------------------------------------------------------------------------
 # MeshCore worker — persistent connection + live ADVERTISEMENT subscription.
 # ---------------------------------------------------------------------------
-class MeshCoreWorker(_PositionRequests, threading.Thread):
+class MeshCoreWorker(_PositionRequests, _SampleWorker, threading.Thread):
     def __init__(self, store: MeshStore, port: str = "", transport: str = "serial",
                  ble_address: str = "auto", baud: int = 115200,
-                 advert_minutes: int = 60) -> None:
+                 advert_minutes: int = 60, sample_sink: Callable | None = None) -> None:
         super().__init__(name=f"wdgw-cap-mc-{port or ble_address}", daemon=True)
         self.store = store
         self.port = port
@@ -471,25 +600,43 @@ class MeshCoreWorker(_PositionRequests, threading.Thread):
         self.ble_address = ble_address
         self.baud = baud
         self.advert_minutes = advert_minutes
-        self._stop = threading.Event()
+        self._stop_event = threading.Event()
         self.connected = False
         self.heard = 0
         self.radio: dict | None = None    # latest reading of the companion itself
-        self._session_id = ""
         self._unsupported: set[str] = set()
         self._firmware: str | None = None
+        self._sample_sink = sample_sink
+        self.error = ""
+        self._loop = None
+        self._task = None
 
     def stop(self) -> None:
-        self._stop.set()
+        self._stop_event.set()
+        if self._loop and self._task:
+            try:
+                self._loop.call_soon_threadsafe(self._task.cancel)
+            except RuntimeError:
+                pass
 
     def run(self) -> None:
-        while not self._stop.is_set():
+        while not self._stop_event.is_set():
             try:
-                asyncio.run(self._session())
-            except Exception as e:  # noqa: BLE001
+                asyncio.run(self._run_session())
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                self.error = str(e)
                 log.warning("meshcore capture on %s dropped: %s", self.port or self.ble_address, e)
+            finally:
+                self._loop = self._task = None
             self.connected = False
-            self._stop.wait(15)
+            self._stop_event.wait(15)
+
+    async def _run_session(self):
+        self._loop = asyncio.get_running_loop()
+        self._task = asyncio.current_task()
+        await self._session()
 
     def _capture_contact(self, contact: Any, heard: float | None = None) -> None:
         d = mesh.contact_to_node(contact)
@@ -506,8 +653,8 @@ class MeshCoreWorker(_PositionRequests, threading.Thread):
             return
         lat, lon = req
         try:
-            ev = await mc.commands.set_coords(lat, lon)
-            if ev is None or ev.type == EventType.ERROR:
+            ev = await asyncio.wait_for(mc.commands.set_coords(lat, lon), _QUERY_TIMEOUT)
+            if ev is None or getattr(ev, "type", None) == EventType.ERROR:
                 raise RuntimeError("the radio refused the position")
             info = getattr(mc, "self_info", None)
             if isinstance(info, dict):
@@ -521,81 +668,118 @@ class MeshCoreWorker(_PositionRequests, threading.Thread):
         await self._sample_radio(mc, EventType)
 
     async def _sample_radio(self, mc, EventType) -> None:
-        """Read the companion's own battery, uptime and packet counters for the
-        Wardrift mesh upload. A command the firmware answers with an error (older
-        firmware has no GET_STATS) is not sent again this session."""
-        async def ask(name: str, fn):
+        """Queries run sequentially; each response is its own dated evidence.
+
+        Slow radio queries never move an earlier uptime to a later timestamp.
+        Missing/unsupported methods are suppressed only for this connection.
+        """
+        async def ask(name: str):
             if name in self._unsupported:
                 return None
             try:
-                ev = await fn()
-            except Exception:  # noqa: BLE001
+                fn = getattr(mc.commands, name, None)
+                if not callable(fn):
+                    self._unsupported.add(name)
+                    return None
+                ev = await asyncio.wait_for(fn(), timeout=_QUERY_TIMEOUT)
+            except (AttributeError, NotImplementedError):
+                self._unsupported.add(name)
+                return None
+            except asyncio.TimeoutError:
+                self.error = f"Radio query {name} timed out; retrying next sample"
+                return None
+            except Exception as e:
+                self.error = f"Radio query {name} failed: {e}"
                 return None
             payload = getattr(ev, "payload", None)
-            if ev is None or ev.type == EventType.ERROR:
-                if isinstance(payload, dict) and "error_code" in payload:
+            if ev is None or getattr(ev, "type", None) == EventType.ERROR:
+                if isinstance(payload, dict) and payload.get("error_code") == 1:
                     self._unsupported.add(name)
                 return None
-            return (payload, time.time()) if isinstance(payload, dict) else None
+            if isinstance(payload, dict):
+                if self.error.startswith(f"Radio query {name} "):
+                    self.error = ""
+                return payload, time.time()
+            return None
 
-        if self._firmware is None and "device" not in self._unsupported:
-            dev = await ask("device", mc.commands.send_device_query)
+        if self._firmware is None:
+            dev = await ask("send_device_query")
             if dev:
-                self._firmware = (dev[0].get("ver") or dev[0].get("fw_build") or "").strip()
-        bat = await ask("battery", mc.commands.get_bat)
-        core = await ask("core", mc.commands.get_stats_core)
-        pkts = await ask("packets", mc.commands.get_stats_packets)
-
+                # 'fw ver' is a binary protocol revision, NOT the firmware build.
+                fw = dev[0].get("ver") or dev[0].get("fw_build")
+                self._firmware = fw.strip() if isinstance(fw, str) and fw.strip() else "unknown"
         info = dict(getattr(mc, "self_info", None) or {})
-        node = mesh.contact_to_node({
-            "public_key": info.get("public_key"), "type": info.get("adv_type"),
-            "adv_name": info.get("name"), "adv_lat": info.get("adv_lat"),
-            "adv_lon": info.get("adv_lon")})
-        if not node or len(node.get("public_key") or "") != 64:
+        node = mesh.contact_to_node({"public_key": info.get("public_key"), "type": info.get("adv_type", 1),
+                                     "adv_name": info.get("name"), "adv_lat": info.get("adv_lat"),
+                                     "adv_lon": info.get("adv_lon")})
+        if node:
+            self.radio = {**(self.radio or {}), "node": node}
+        pub = str((node or {}).get("public_key") or "")
+        if len(pub) != 64 or any(c not in "0123456789abcdef" for c in pub):
             return
-        mv, health_at = None, None
-        if core and core[0].get("battery_mv"):
-            mv, health_at = core[0]["battery_mv"], core[1]
-        elif bat and bat[0].get("level"):
-            mv, health_at = bat[0]["level"], bat[1]
-        counters: dict[str, Any] = {}
+
+        def emit(result, *, health=None, counters=None, uptime=None):
+            if not result:
+                return
+            at = result[1]
+            health = health or {}
+            self._publish({"protocol": "meshcore", "transport": "ble" if self.transport == "ble" else "usb_serial",
+                           "node": node, "observed_at": at,
+                           "firmware_version": self._firmware or "unknown", "profile": "meshcore-companion-v1",
+                           "uptime_seconds": uptime, "uptime_at": at if uptime is not None else None,
+                           "health": health, "health_at": at if health else None,
+                           "battery_level": None, "voltage": health.get("voltage"),
+                           "counters": counters or {}, "counters_at": at if counters else None,
+                           "role": node.get("node_type") or "COMPANION"})
+
+        def voltage(mv):
+            return mv / 1000.0 if isinstance(mv, (int, float)) and not isinstance(mv, bool) else None
+
+        core = await ask("get_stats_core")
+        if core:
+            emit(core, uptime=core[0].get("uptime_secs"), health={
+                "voltage": voltage(core[0].get("battery_mv")),
+                "queue_length": core[0].get("queue_len"), "error_flags": core[0].get("errors")})
+        if not core or core[0].get("battery_mv") is None:
+            bat = await ask("get_bat")
+            if bat:
+                emit(bat, health={"voltage": voltage(bat[0].get("level"))})
+        radio = await ask("get_stats_radio")
+        if radio:
+            emit(radio, health={wire: radio[0][key] for wire, key in (
+                ("rssi_dbm", "last_rssi"), ("snr_db", "last_snr"), ("noise_floor_dbm", "noise_floor"),
+                ("tx_airtime_seconds", "tx_air_secs"), ("rx_airtime_seconds", "rx_air_secs")) if key in radio[0]})
+        pkts = await ask("get_stats_packets")
         if pkts:
-            counters = {"num_packets_tx": pkts[0].get("sent"),
-                        "num_packets_rx": pkts[0].get("recv")}
-        self.radio = {
-            "protocol": "meshcore",
-            "transport": "ble" if self.transport == "ble" else "usb_serial",
-            "session": self._session_id,
-            "node": node,
-            "observed_at": time.time(),
-            "firmware_version": self._firmware or None,
-            "uptime_seconds": core[0].get("uptime_secs") if core else None,
-            "uptime_at": core[1] if core else None,
-            "battery_level": None,     # MeshCore reports millivolts only
-            "voltage": round(mv / 1000.0, 3) if mv else None,
-            "health_at": health_at,
-            "counters": counters,
-            "counters_at": pkts[1] if pkts else None,
-            "profile": ("meshcore-stats-v1" if core or pkts else
-                        "meshcore-battery-v1" if mv else "meshcore-basic-v1"),
-        }
+            counters = {wire: pkts[0][key] for wire, key in (
+                ("num_packets_tx", "sent"), ("num_packets_rx", "recv"), ("num_packets_rx_bad", "recv_errors"),
+                ("flood_tx", "flood_tx"), ("direct_tx", "direct_tx"), ("flood_rx", "flood_rx"),
+                ("direct_rx", "direct_rx")) if key in pkts[0]}
+            # MeshCore recv counts successful reads; recv_errors is separate.
+            # Wardrift's common RX total includes both, as Meshtastic does. Old
+            # frames lack errors: retain their reported RX and unknown errors.
+            good, bad = pkts[0].get("recv"), pkts[0].get("recv_errors")
+            if all(type(v) is int and 0 <= v <= 2 ** 32 - 1 for v in (good, bad)):
+                total = good + bad
+                counters["num_packets_rx"] = total if total <= 2 ** 32 - 1 else None
+            emit(pkts, counters=counters)
+
+    async def _open_serial(self, MeshCore):
+        # Preserve the existing board-specific open guard and SDK factory.
+        if _needs_no_reset(self.port):
+            _NO_RESET_PORTS.add(self.port)
+        else:
+            _NO_RESET_PORTS.discard(self.port)
+        return await asyncio.wait_for(MeshCore.create_serial(self.port, self.baud), 45)
 
     async def _session(self) -> None:
         from meshcore import MeshCore, EventType
 
         if self.transport == "ble":
             addr = None if (not self.ble_address or self.ble_address.lower() == "auto") else self.ble_address
-            mc = await MeshCore.create_ble(addr)
+            mc = await asyncio.wait_for(MeshCore.create_ble(addr), 45)
         else:
-            if self.port:
-                # Hold DTR/RTS low only where the lines reset the board (see
-                # _NO_RESET_IDS). Doing it to an nRF52 board (T114) silences its CDC, which
-                # presents exactly like "not a MeshCore companion".
-                if _needs_no_reset(self.port):
-                    _NO_RESET_PORTS.add(self.port)
-                else:
-                    _NO_RESET_PORTS.discard(self.port)
-            mc = await MeshCore.create_serial(self.port, self.baud)
+            mc = await self._open_serial(MeshCore)
         if mc is None or not getattr(mc, "is_connected", True):
             # Close before raising: the failed object can still own the port, and
             # a leaked handle turns the next retry into "Access is denied".
@@ -611,7 +795,7 @@ class MeshCoreWorker(_PositionRequests, threading.Thread):
                             pass
             raise RuntimeError("could not connect to a MeshCore companion")
         self.connected = True
-        self._session_id = uuid.uuid4().hex
+        self.error = ""
         self._unsupported = set()
         self._firmware = None
         log.info("meshcore capture connected (%s)", self.port or self.ble_address)
@@ -631,18 +815,21 @@ class MeshCoreWorker(_PositionRequests, threading.Thread):
             # NEW_CONTACT carries the full contact record.
             self._capture_contact(getattr(ev, "payload", None), heard=time.time())
 
-        mc.subscribe(EventType.ADVERTISEMENT, on_advert)
-        mc.subscribe(EventType.NEW_CONTACT, on_contact)
+        subscriptions = []
         try:
+            subscriptions.append(mc.subscribe(EventType.ADVERTISEMENT, on_advert))
+            subscriptions.append(mc.subscribe(EventType.NEW_CONTACT, on_contact))
             # seed from the current contact table
-            res = await mc.commands.get_contacts()
+            res = await asyncio.wait_for(mc.commands.get_contacts(), _QUERY_TIMEOUT)
             payload = getattr(res, "payload", res)
             for c in (payload.values() if isinstance(payload, dict) else (payload or [])):
                 self._capture_contact(c)
             await self._sample_radio(mc, EventType)
             last_advert = last_sample = time.time()
-            while not self._stop.is_set():
-                await asyncio.sleep(3)
+            while not self._stop_event.is_set():
+                await asyncio.sleep(1)
+                if not getattr(mc, "is_connected", True):
+                    raise ConnectionError("MeshCore disconnected")
                 await self._apply_position(mc, EventType)
                 if time.time() - last_sample >= _RADIO_SAMPLE_SECS:
                     await self._sample_radio(mc, EventType)
@@ -654,11 +841,17 @@ class MeshCoreWorker(_PositionRequests, threading.Thread):
                         self._capture_contact(c)
                 if self.advert_minutes and (time.time() - last_advert) >= self.advert_minutes * 60:
                     try:
-                        await mc.commands.send_advert(flood=True)
+                        await asyncio.wait_for(mc.commands.send_advert(flood=True), _QUERY_TIMEOUT)
                     except Exception:
                         pass
                     last_advert = time.time()
         finally:
+            self.connected = False
+            for subscription in subscriptions:
+                try:
+                    mc.unsubscribe(subscription)
+                except Exception:
+                    pass
             for closer in ("disconnect", "stop"):
                 fn = getattr(mc, closer, None)
                 if fn:
@@ -681,6 +874,13 @@ class MeshCaptureService:
         self._lock = threading.Lock()
         self._persist_path = persist_path
         self._persist_ts = 0.0
+        self._sample_lock = threading.Lock()
+        self._pending: dict[str, dict] = {}
+        self._pending_bytes = 0
+        self._credential_fingerprint = ""
+        self._accept_samples = True
+        self._sample_error = ""
+        self._config_errors: list[dict] = []
         self._load()
 
     def _load(self) -> None:
@@ -718,67 +918,167 @@ class MeshCaptureService:
             log.debug("could not persist capture store: %s", e)
 
     @staticmethod
+    def _endpoint(dev: dict) -> str:
+        import os
+        transport = dev.get("transport", "serial")
+        endpoint = str(dev.get("ble_address", "") if transport == "ble" else dev.get("port", "")).strip()
+        # Windows accepts both COM4 and its native \\.\COM4 device path.
+        if transport == "serial" and endpoint.startswith("\\\\.\\") and endpoint[4:].upper().startswith("COM"):
+            endpoint = endpoint[4:]
+        if transport == "ble" or endpoint.upper().startswith("COM"):
+            endpoint = endpoint.upper()
+        elif endpoint.startswith("/"):
+            endpoint = os.path.realpath(endpoint)
+        return f"{transport}:{endpoint}"
+
+    @staticmethod
     def _key(dev: dict) -> str:
-        return f"{dev.get('protocol','meshcore')}:{dev.get('port','auto')}"
+        return f"{dev.get('protocol', 'meshcore')}:{MeshCaptureService._endpoint(dev)}"
+
+    def set_credential_fingerprint(self, fingerprint: str) -> None:
+        with self._sample_lock:
+            self._credential_fingerprint = fingerprint or ""
+
+    def _capture_sample(self, sample: dict) -> None:
+        item = copy.deepcopy(sample)
+        with self._sample_lock:
+            if not self._accept_samples:
+                return
+            item.setdefault("capture_id", str(uuid.uuid4()))
+            if item["capture_id"] in self._pending:
+                return  # Never replace an immutable observation on handoff retry.
+            item["credential_fingerprint"] = self._credential_fingerprint
+            size = len(json.dumps(item).encode("utf-8"))
+            if len(self._pending) >= _SAMPLE_CAP or self._pending_bytes + size > _SAMPLE_BYTE_CAP:
+                self._sample_error = "Local health queue is full; fresh health capture paused until pending samples are saved"
+                raise RuntimeError(self._sample_error)
+            item["_queue_bytes"] = size
+            self._pending[item["capture_id"]] = item
+            self._pending_bytes += size
+
+    def pending_samples(self) -> list[dict]:
+        """Peek immutable observations; acknowledge only after durable staging."""
+        with self._sample_lock:
+            return copy.deepcopy(list(self._pending.values()))
+
+    def acknowledge_samples(self, capture_ids) -> None:
+        with self._sample_lock:
+            for capture_id in capture_ids:
+                old = self._pending.pop(capture_id, None)
+                if old:
+                    self._pending_bytes -= old.get("_queue_bytes", 0)
+            if len(self._pending) < _SAMPLE_CAP and self._pending_bytes < _SAMPLE_BYTE_CAP:
+                self._sample_error = ""
 
     def reconcile(self, devices: list[dict], hop_limit: int, advert_minutes: int,
-                  transport: str = "serial", ble_address: str = "auto") -> None:
-        """Start workers for enabled devices, stop those no longer wanted."""
-        want: dict[str, dict] = {}
-        for dev in devices or []:
-            if dev.get("enabled", True):
-                want[self._key(dev)] = dev
+                  transport: str = "serial", ble_address: str = "auto",
+                  credential_fingerprint: str | None = None) -> None:
+        """Close removed/changed connections before claiming their endpoints."""
+        if credential_fingerprint is not None:
+            self.set_credential_fingerprint(credential_fingerprint)
+        with self._sample_lock:
+            self._accept_samples = True
+        want, errors, endpoints = {}, [], set()
+        for slot, supplied in enumerate(devices or []):
+            if not supplied.get("enabled", True):
+                continue
+            dev = dict(supplied)
+            dev["_slot"] = slot
+            proto = str(dev.get("protocol") or "meshcore").lower()
+            dev["protocol"] = proto
+            # Legacy global BLE defaults belong only to MeshCore.
+            dev["transport"] = dev.get("transport") or (transport if proto == "meshcore" else "serial")
+            if dev["transport"] == "usb_serial":
+                dev["transport"] = "serial"
+            dev["ble_address"] = dev.get("ble_address") or (ble_address if proto == "meshcore" else "")
+            endpoint = self._endpoint(dev)
+            error = ""
+            if proto not in ("meshtastic", "meshcore") or dev["transport"] not in ("serial", "ble"):
+                error = "Unsupported radio protocol or transport"
+            elif proto == "meshtastic" and dev["transport"] == "ble" and str(dev["ble_address"]).lower() in ("", "auto"):
+                error = "Set an explicit BLE address in Settings"
+            elif dev["transport"] == "serial" and str(dev.get("port") or "").lower() in ("", "auto"):
+                error = "No serial port selected or detected"
+            elif endpoint in endpoints:
+                error = "Another configured radio already uses this endpoint"
+            if error:
+                errors.append({**dev, "connected": False, "error": error})
+                continue
+            endpoints.add(endpoint)
+            dev["_settings"] = (int(dev.get("baud", 115200) or 115200), hop_limit, advert_minutes)
+            want[self._key(dev)] = dev
         with self._lock:
-            # stop removed/disabled
-            for key in list(self._workers):
-                if key not in want:
-                    w = self._workers.pop(key)
-                    try:
-                        w.stop()
-                    except Exception:
-                        pass
-            # start new
+            self._config_errors = errors
+            for key, worker in list(self._workers.items()):
+                dev = want.get(key)
+                if dev is None or getattr(worker, "_settings", None) != dev["_settings"]:
+                    worker.stop()
+                    worker.join(timeout=3)
+                    if not worker.is_alive():
+                        del self._workers[key]
+            busy = {getattr(w, "_endpoint", "") for w in self._workers.values() if w.is_alive()}
             for key, dev in want.items():
-                if key in self._workers and self._workers[key].is_alive():
+                previous = self._workers.get(key)
+                if previous is not None and previous.is_alive():
+                    if getattr(previous, "_settings", None) != dev["_settings"]:
+                        self._config_errors.append({**dev, "connected": False,
+                                                    "error": "Waiting for the previous connection to close"})
                     continue
-                proto = (dev.get("protocol") or "meshcore").lower()
-                if proto == "meshtastic":
-                    w: threading.Thread = MeshtasticWorker(
-                        dev.get("port", ""), self.store, hop_limit=hop_limit,
-                        advert_minutes=advert_minutes)
+                # An entry switching USB/BLE has a different endpoint key, but
+                # its previous worker must finish cleanup before replacement.
+                if any(w.is_alive() and getattr(w, "_slot", None) == dev["_slot"]
+                       for old_key, w in self._workers.items() if old_key != key and old_key not in want):
+                    self._config_errors.append({**dev, "connected": False,
+                                                "error": "Waiting for the previous connection to close"})
+                    continue
+                endpoint = self._endpoint(dev)
+                if endpoint in busy:
+                    self._config_errors.append({**dev, "connected": False,
+                                                "error": "Waiting for the previous connection to close"})
+                    continue
+                common = {"transport": dev["transport"], "ble_address": dev["ble_address"],
+                          "advert_minutes": advert_minutes, "sample_sink": self._capture_sample}
+                if dev["protocol"] == "meshtastic":
+                    worker = MeshtasticWorker(dev.get("port", ""), self.store, hop_limit=hop_limit, **common)
                 else:
-                    w = MeshCoreWorker(
-                        self.store, port=dev.get("port", ""), transport=transport,
-                        ble_address=ble_address, baud=int(dev.get("baud", 115200) or 115200),
-                        advert_minutes=advert_minutes)
-                w.start()
-                self._workers[key] = w
+                    worker = MeshCoreWorker(self.store, port=dev.get("port", ""),
+                                            baud=dev["_settings"][0], **common)
+                worker._settings = dev["_settings"]
+                worker._endpoint = endpoint
+                worker._slot = dev["_slot"]
+                worker.start()
+                self._workers[key] = worker
+                busy.add(endpoint)
 
     def stop(self) -> None:
-        self.persist(force=True)   # never lose the accumulated store on shutdown
+        # Serialize with any callback currently enqueuing. No late callback can
+        # add work after this method returns and the core performs its final save.
+        with self._sample_lock:
+            self._accept_samples = False
         with self._lock:
-            for w in self._workers.values():
-                try:
-                    w.stop()
-                except Exception:
-                    pass
-            self._workers.clear()
+            for worker in self._workers.values():
+                worker.stop()
+            for key, worker in list(self._workers.items()):
+                worker.join(timeout=3)
+                if not worker.is_alive():
+                    del self._workers[key]
+        self.persist(force=True)
+        # Pending samples remain readable for the core's final durable stage.
 
     def status(self) -> list[dict]:
         with self._lock:
             out = []
-            for key, w in self._workers.items():
-                proto, port = key.split(":", 1)
-                heard = int(getattr(w, "heard", 0))
-                node = (getattr(w, "radio", None) or {}).get("node") or {}
-                pos = ([node["lat"], node["lon"]]
-                       if node.get("lat") is not None and node.get("lon") is not None else None)
-                out.append({"port": port, "protocol": proto,
-                            "connected": bool(getattr(w, "connected", False)),
-                            "heard": heard, "contacts": heard,
-                            "position": pos,
-                            "position_status": getattr(w, "position_status", "")})
-            return out
+            for key, worker in self._workers.items():
+                radio = copy.deepcopy(getattr(worker, "radio", None) or {})
+                node = radio.get("node") or {}
+                pos = [node["lat"], node["lon"]] if node.get("lat") is not None and node.get("lon") is not None else None
+                out.append({"port": worker.port, "protocol": key.split(":", 1)[0],
+                            "transport": worker.transport, "ble_address": worker.ble_address,
+                            "connected": bool(worker.connected), "heard": worker.heard, "contacts": worker.heard,
+                            "position": pos, "position_status": worker.position_status,
+                            "observed_at": radio.get("observed_at"),
+                            "error": self._sample_error or getattr(worker, "error", "")})
+            return out + copy.deepcopy(self._config_errors)
 
     def snapshot(self, recent_secs: float | None = None) -> list[dict]:
         return self.store.snapshot(recent_secs)
@@ -792,7 +1092,7 @@ class MeshCaptureService:
         return len(workers)
 
     def local_radios(self) -> list[dict]:
-        """Latest reading of each connected radio's own health and counters."""
+        """Latest reading of each connected radio; Wardrift uses pending_samples."""
         with self._lock:
             workers = list(self._workers.values())
         return [dict(w.radio) for w in workers
