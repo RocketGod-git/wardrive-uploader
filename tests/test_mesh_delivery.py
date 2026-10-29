@@ -336,7 +336,7 @@ class LedgerTest(unittest.TestCase):
                 client.session.post.assert_not_called()
                 self.assertEqual(self.reporter.pending(ACCOUNT_A)[0]["payload"], batch["payload"])
 
-    def test_definitive_conflict_is_retained_and_later_work_can_proceed(self):
+    def test_definitive_conflict_is_dropped_and_later_work_can_proceed(self):
         client = self.client()
         self.prepare([radio()])
         second = radio(time.time() - 1, uptime_seconds=1009)
@@ -349,10 +349,55 @@ class LedgerTest(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertEqual(result.telemetry, 1)
         stored = json.loads(self.path.read_text())
-        self.assertEqual(len(stored["batches"]), 1)
-        self.assertEqual(stored["batches"][0]["status"], "rejected")
-        self.assertEqual(stored["batches"][0]["payload"].encode(), calls[0])
-        self.assertIn("sample_conflict", stored["batches"][0]["error"])
+        self.assertEqual(stored["batches"], [])
+        self.assertIn("sample_conflict", result.error)
+        self.assertEqual(self.reporter.status(self.fp)["error"], "")
+
+    def test_rejected_health_never_takes_nodes_with_it(self):
+        client = self.client()
+        heard = time.time() - 30
+        nodes = [{"network": "meshtastic", "node_id": f"{i:08x}", "name": f"n{i}", "heard_ts": heard} for i in range(1, 4)]
+        bodies = []
+        def upload(*a, **kw):
+            body = json.loads(kw["data"])
+            bodies.append(body)
+            if any("telemetry" in n for n in body["nodes"]):
+                return response(409, {"error": "radio_reporting_elsewhere", "message": "conflict"})
+            return response(body=receipt(body))
+        client.session.post.side_effect = upload
+        result = client.upload_mesh(nodes, [radio()], self.reporter)
+        self.assertEqual(result.nodes, 3)
+        self.assertTrue(all(len(b["nodes"]) == 1 for b in bodies if any("telemetry" in n for n in b["nodes"])))
+        status = self.reporter.status(self.fp)
+        self.assertEqual(status["pending"], 0)
+        self.assertIn("radio_reporting_elsewhere", status["error"])
+        client.upload_mesh(nodes, [radio(uptime_seconds=1100)], self.reporter)
+        self.assertIn("radio_reporting_elsewhere", self.reporter.status(self.fp)["error"])
+        client.session.post.side_effect = lambda *a, **kw: response(body=receipt(kw["data"]))
+        client.upload_mesh(nodes, [radio(uptime_seconds=1200)], self.reporter)
+        self.assertEqual(self.reporter.status(self.fp)["error"], "")
+
+    def test_rejected_discovery_is_sent_again(self):
+        client = self.client()
+        nodes = [{"network": "meshtastic", "node_id": "0000abcd", "name": "n", "heard_ts": time.time() - 30}]
+        client.session.post.side_effect = lambda *a, **kw: response(400, {"error": "invalid_batch"})
+        self.assertEqual(client.upload_mesh(nodes, [], self.reporter).nodes, 0)
+        client.session.post.side_effect = lambda *a, **kw: response(body=receipt(kw["data"]))
+        self.assertEqual(client.upload_mesh(nodes, [], self.reporter).nodes, 1)
+
+    def test_sequence_conflict_is_resent_not_dropped(self):
+        client = self.client()
+        client.session.post.side_effect = lambda *a, **kw: response(409, {"error": "sequence_conflict"})
+        client.upload_mesh([], [radio()], self.reporter)
+        stored = json.loads(self.path.read_text())
+        self.assertEqual([b["status"] for b in stored["batches"]], ["pending"])
+
+    def test_receipt_history_is_bounded(self):
+        client = self.client()
+        client.session.post.side_effect = lambda *a, **kw: response(body=receipt(kw["data"]))
+        for i in range(w.MAX_RECEIPTS + 5):
+            client.upload_mesh([], [radio(time.time() - 100 + i * 0.01, uptime_seconds=1000 + i)], self.reporter)
+        self.assertEqual(len(self.reporter.receipts(self.fp)), w.MAX_RECEIPTS)
 
     def test_redirect_post_is_not_followed_or_acknowledged(self):
         client = self.client()

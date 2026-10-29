@@ -119,6 +119,8 @@ MAX_MESH_BYTES = 2_000_000
 MAX_PENDING_SAMPLES = 10_000
 MAX_STATE_BYTES = 64_000_000
 MAX_QUEUE_BYTES = 32_000_000
+MAX_RECEIPTS = 200      # receipts kept per account, newest first; the dashboard shows these
+MAX_QUARANTINE = 100    # unusable measurements kept for diagnosis
 
 
 @dataclass
@@ -634,6 +636,7 @@ class MeshReporter:
             account = self._account(updated, account_id)
             if not account["since"]:
                 account["since"] = now - MESH_BACKFILL_SECS
+            updated["batches"] = [b for b in updated["batches"] if b["status"] != "rejected"]
             items = []
             remaining = []
             for obs in sorted(updated["observations"], key=lambda x: _num(x["radio"].get("observed_at")) or 0):
@@ -656,6 +659,7 @@ class MeshReporter:
                     account["radios"][identity] = {**previous, "seq": item["radio"]["seq"]}
                 items.append(item)
             updated["observations"] = remaining
+            updated["quarantine"] = updated["quarantine"][-MAX_QUARANTINE:]
             covered = dict(account["sent"])
             for batch in updated["batches"]:
                 if batch["account_id"] == account_id:
@@ -695,6 +699,8 @@ class MeshReporter:
                 while items and len(part) < MESH_CHUNK:
                     candidate = items[0]
                     tel = candidate["wire"].get("telemetry")
+                    if part and bool(tel) != bool(part[0]["wire"].get("telemetry")):
+                        break
                     if tel and len(samples) >= 100:
                         break
                     body["nodes"].append(candidate["wire"])
@@ -722,11 +728,21 @@ class MeshReporter:
                                         key=lambda b: b["sequence_no"]))
 
     def failure(self, batch_id: str, error: str, *, rejected: bool = False, retry_at: float = 0) -> None:
+        """A rejected request is dropped. Its nodes were never acknowledged, so the
+        next upload sends them again; its health samples are not resent."""
         with self._lock:
             updated = copy.deepcopy(self._data)
             batch = next(b for b in updated["batches"] if b["batch_id"] == batch_id)
-            batch.update(error=error, status="rejected" if rejected else "pending", retry_at=retry_at, attempts=batch["attempts"] + 1)
-            self._account(updated, batch["account_id"])["error"] = error
+            account = self._account(updated, batch["account_id"])
+            account["error"] = error
+            if rejected:
+                updated["batches"] = [b for b in updated["batches"] if b["batch_id"] != batch_id]
+                if batch["sample_ids"]:
+                    account["telemetry_error"] = error
+                log.warning("Wardrift rejected mesh batch %s (%d nodes, %d health samples): %s",
+                            batch_id, len(batch["items"]), len(batch["sample_ids"]), error)
+            else:
+                batch.update(error=error, retry_at=retry_at, attempts=batch["attempts"] + 1)
             self._commit(updated)
 
     def acknowledge(self, batch: dict, receipt: dict) -> dict:
@@ -741,6 +757,11 @@ class MeshReporter:
             for it in batch["items"]:
                 account["sent"][it["identity"]] = max(account["sent"].get(it["identity"], 0), it["key"])
             account["error"] = ""
+            if batch["sample_ids"]:
+                account.pop("telemetry_error", None)
+            if len(account["receipts"]) > MAX_RECEIPTS:
+                keep = sorted(account["receipts"].values(), key=lambda r: r["accepted_at"])[-MAX_RECEIPTS:]
+                account["receipts"] = {r["receipt_id"]: r for r in keep}
             updated["batches"] = [b for b in updated["batches"] if b["batch_id"] != batch["batch_id"]]
             self._commit(updated)
             return copy.deepcopy(record)
@@ -768,6 +789,7 @@ class MeshReporter:
                     "retained": retained,
                     "last_acknowledged": receipts[-1]["accepted_at"] if receipts else None,
                     "error": self.error or self._data.get("credential_errors", {}).get(fingerprint) or account.get("error")
+                    or account.get("telemetry_error")
                     or next((b["error"] for b in reversed(batches) if b["status"] == "rejected"), "")
                     or (quarantine[-1]["error"] if quarantine else "")}
 
@@ -948,7 +970,9 @@ class WardriftClient:
                         error = _mesh_error(status, response)
                         if self.api_key:
                             error = error.replace(self.api_key, "[redacted]")
-                        definitive = status in (400, 409, 413, 422)
+                        # Two uploads on one key at once is the only 409 worth resending.
+                        definitive = (status in (400, 409, 413, 422)
+                                      and _mesh_json(response).get("error") != "sequence_conflict")
                         delay = max(min(300, 2 ** min(batch["attempts"] + 1, 8)), getattr(self, "_mesh_retry_after", 0))
                         reporter.failure(batch["batch_id"], error, rejected=definitive, retry_at=time.time() + delay)
                         res.ok, res.error = False, error
