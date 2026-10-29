@@ -276,19 +276,19 @@ class CoreCoordinationTests(TemporaryState):
 class DashboardTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.html = (Path(__file__).parents[1] / "wdgwars_uploader/webui/dashboard.html").read_text()
+        cls.html = (Path(__file__).parents[1] / "wdgwars_uploader/webui/dashboard.html").read_text(encoding="utf-8")
 
     def run_script(self, source):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "dashboard.js"
-            path.write_text(source)
+            path.write_text(source, encoding="utf-8")
             return subprocess.run(["node", str(path)], capture_output=True, text=True, check=True).stdout
 
     def test_all_dashboard_script_syntax(self):
         source = "\n".join(re.findall(r"<script\b[^>]*>(.*?)</script>", self.html, re.S))
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "dashboard.js"
-            path.write_text(source)
+            path.write_text(source, encoding="utf-8")
             subprocess.run(["node", "--check", str(path)], capture_output=True, text=True, check=True)
 
     def test_mesh_receipt_uses_existing_modal_with_zero_unknown_and_fractional_values(self):
