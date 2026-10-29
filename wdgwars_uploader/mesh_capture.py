@@ -56,6 +56,10 @@ _RADIO_SAMPLE_SECS = 300
 _QUERY_TIMEOUT = 10.0
 _SAMPLE_CAP = 10000
 _SAMPLE_BYTE_CAP = 20_000_000
+# A radio without GPS or a phone keeps a clock that can be hours off. Its own
+# timestamp is used only when it agrees with the PC within this window.
+_CLOCK_BEHIND_SECS = 900
+_CLOCK_AHEAD_SECS = 120
 
 # Ports whose DTR/RTS lines reset the attached board. These are opened with both
 # lines held low:
@@ -340,15 +344,17 @@ class MeshtasticWorker(_PositionRequests, _SampleWorker, threading.Thread):
     @staticmethod
     def _observed_at(tel: dict, received_at: float) -> float:
         # Telemetry.time is acquisition time (Unix seconds), with zero meaning
-        # unset. Buffered local packets must not become fresh on reconnect.
+        # unset. A buffered packet keeps its own time; a radio clock that is far
+        # from the PC's is wrong, so the time it reached the PC is used instead.
         raw = tel.get("raw")
         stamp = getattr(raw, "time", tel.get("time", 0))
         if stamp is None or stamp == 0 and not isinstance(stamp, bool):
             return received_at
         if (not isinstance(stamp, (int, float)) or isinstance(stamp, bool)
-                or not math.isfinite(stamp) or stamp != int(stamp)
-                or not 1577836800 <= stamp <= received_at + 120):
+                or not math.isfinite(stamp) or stamp != int(stamp) or stamp < 0):
             raise ValueError("Radio telemetry clock is invalid; measurement was not redated")
+        if not received_at - _CLOCK_BEHIND_SECS <= stamp <= received_at + _CLOCK_AHEAD_SECS:
+            return received_at
         return float(stamp)
 
     def _on_receive(self, packet, interface, iface) -> None:

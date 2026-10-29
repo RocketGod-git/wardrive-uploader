@@ -163,7 +163,7 @@ class MeshtasticCaptureTests(unittest.TestCase):
     def test_unset_clock_uses_receipt_time_but_bad_clock_is_not_redated(self):
         self.receive({"time": 0, "deviceMetrics": {"uptimeSeconds": 10}})
         self.assertEqual(self.samples[-1]["observed_at"], NOW)
-        for bad in (True, -1, "not a clock", NOW + 121, float("nan")):
+        for bad in (True, -1, "not a clock", float("nan")):
             with self.subTest(clock=bad):
                 with self.assertLogs("wdgwars.capture", level="WARNING"):
                     self.receive({"time": bad, "deviceMetrics": {"uptimeSeconds": 10}})
@@ -171,6 +171,14 @@ class MeshtasticCaptureTests(unittest.TestCase):
         self.assertEqual(len(self.samples), 1)
 
         self.receive({"time": NOW, "deviceMetrics": {"uptimeSeconds": 11}})
+        self.assertEqual(self.worker.error, "")
+
+    def test_radio_clock_far_from_pc_uses_receipt_time(self):
+        for skewed in (NOW - 5 * 3600, NOW - 901, NOW + 121, 1600000000):
+            with self.subTest(clock=skewed):
+                self.receive({"time": skewed, "deviceMetrics": {"uptimeSeconds": 10}})
+                self.assertEqual(self.samples[-1]["observed_at"], NOW)
+                self.assertEqual(self.samples[-1]["uptime_at"], NOW)
         self.assertEqual(self.worker.error, "")
 
     def test_groups_are_immutable_events_with_original_times(self):
