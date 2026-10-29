@@ -512,12 +512,12 @@ class MeshtasticWorker(_PositionRequests, _SampleWorker, threading.Thread):
 
     def _open_bounded(self, factory, deadline):
         box: dict[str, Any] = {}
-        cancelled = threading.Event()
+        canceled = threading.Event()
 
         def opening():
             try:
                 iface = factory()
-                if cancelled.is_set():
+                if canceled.is_set():
                     iface.close()
                 else:
                     box["iface"] = iface
@@ -530,13 +530,13 @@ class MeshtasticWorker(_PositionRequests, _SampleWorker, threading.Thread):
         while opener.is_alive():
             opener.join(0.1)
             if self._stop_event.is_set() or time.monotonic() >= end:
-                cancelled.set()
+                canceled.set()
                 self.error = "Radio connection did not close; endpoint held until cleanup finishes"
                 # Keep the worker/endpoint reserved while a library constructor
                 # still owns it. Never open another connection beside a hung one.
         if self._stop_event.is_set() or time.monotonic() >= end:
-            cancelled.set()
-        if cancelled.is_set():
+            canceled.set()
+        if canceled.is_set():
             if "iface" in box:
                 box["iface"].close()
             raise TimeoutError(self.error or "Radio connection canceled before use")
