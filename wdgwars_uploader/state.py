@@ -417,8 +417,9 @@ class LiveState:
         self._save_history()
 
     def reconcile_mesh(self, status: dict[str, Any], receipts: list[dict[str, Any]]) -> None:
-        """Show acknowledged mesh receipts for the selected account without replaying awards."""
-        rows, seen = [], set()
+        """Show acknowledged mesh receipts for the selected account without replaying
+        awards: one row per upload, as before, and none for the periodic radio report."""
+        rows, seen, uploads = [], set(), {}
         account = status.get("account_id")
         for record in receipts:
             receipt = record.get("receipt") or {}
@@ -426,19 +427,31 @@ class LiveState:
             if not account or record.get("account_id") != account or not rid or rid in seen:
                 continue
             seen.add(rid)
+            if record.get("report"):
+                continue
             samples = receipt.get("samples") or []
-            row = {"t": record["accepted_at"], "kind": "mesh", "ok": True,
-                   "receipt_id": rid, "batch_id": receipt.get("batch_id"),
-                   "account_id": account, "sent": record.get("nodes", 0),
-                   "telemetry": receipt.get("reports_accepted", 0),
-                   "currency": receipt.get("currency", 0), "influence": receipt.get("influence", 0),
-                   "availability_seconds": sum(s.get("availability_seconds") or 0 for s in samples),
-                   "summary": f"{receipt.get('reports_accepted', 0)} health samples acknowledged, "
-                              f"+{receipt.get('currency', 0)} currency, +{receipt.get('influence', 0):g} influence"}
+            row = uploads.get(record.get("upload_id") or rid)
+            if row is None:
+                row = {"t": record["accepted_at"], "kind": "mesh", "ok": True,
+                       "receipt_id": rid, "batch_id": receipt.get("batch_id"),
+                       "account_id": account, "sent": 0, "telemetry": 0, "currency": 0, "influence": 0,
+                       "availability_seconds": 0, "_samples": []}
+                uploads[record.get("upload_id") or rid] = row
+                rows.append(row)
+            row["t"] = max(row["t"], record["accepted_at"])
+            row["sent"] += record.get("nodes", 0)
+            row["telemetry"] += receipt.get("reports_accepted", 0)
+            row["currency"] += receipt.get("currency", 0)
+            row["influence"] += receipt.get("influence", 0)
+            row["availability_seconds"] += sum(s.get("availability_seconds") or 0 for s in samples)
+            row["_samples"] += samples
+        for row in rows:
+            samples = row.pop("_samples")
             for key in ("forwarded", "suppressed", "attempted", "failed"):
                 known = [s[key] for s in samples if s.get(key) is not None]
                 row[key] = sum(known) if known else None
-            rows.append(row)
+            row["summary"] = (f"{row['sent']} nodes acknowledged, {row['telemetry']} health samples, "
+                              f"+{row['currency']} currency, +{row['influence']:g} influence")
         with self._lock:
             self.wardrift_mesh = copy.deepcopy(status)
             self._mesh_receipts = sorted(rows, key=lambda r: r["t"])[-500:]

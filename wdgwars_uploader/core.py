@@ -333,9 +333,17 @@ class UploaderCore:
     def stop_mesh(self) -> None:
         self._mesh_stopping.set()
         self.capture.stop()
-        with self._wardrift_mesh_lock:
-            self._stage_mesh_samples(raise_errors=True)
+        # Quitting does not wait out an upload in progress: the ledger guards its own
+        # state, each request is saved before it is sent, and Wardrift answers a
+        # resend with the same receipt.
+        try:
+            samples = self.capture.pending_samples()
+            if samples:
+                self.capture.acknowledge_samples(self.wardrift_mesh.stage(samples))
             self.wardrift_mesh.save()
+        except Exception as e:
+            log.error("Could not preserve Wardrift mesh measurements: %s", e)
+            raise
 
     def refresh_stats(self) -> None:
         self.refresh_wardrift()
@@ -546,7 +554,7 @@ class UploaderCore:
                     self._stage_mesh_samples()
                 nodes = mesh.filter_outlier_positions(self.capture.snapshot())
                 res = wardrift.WardriftClient(key, timeout=30.0).upload_mesh(
-                    nodes, [], self.wardrift_mesh,
+                    nodes, [], self.wardrift_mesh, report=quiet,
                     binding_valid=lambda: not self._mesh_stopping.is_set()
                     and self.cfg.get("mesh_enabled", True)
                     and (self.cfg.get("wardrift_api_key") or "").strip() == key)

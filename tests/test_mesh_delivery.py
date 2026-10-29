@@ -392,6 +392,18 @@ class LedgerTest(unittest.TestCase):
         stored = json.loads(self.path.read_text())
         self.assertEqual([b["status"] for b in stored["batches"]], ["pending"])
 
+    def test_receipts_record_their_upload(self):
+        client = self.client()
+        nodes = [{"network": "meshtastic", "node_id": f"{i:08x}", "name": "n", "heard_ts": time.time() - 30}
+                 for i in range(1, 151)]
+        client.upload_mesh(nodes, [], self.reporter)
+        client.upload_mesh([], [radio()], self.reporter, report=True)
+        records = self.reporter.receipts(self.fp)
+        self.assertEqual(len(records), 3)
+        self.assertEqual(records[0]["upload_id"], records[1]["upload_id"])
+        self.assertNotEqual(records[1]["upload_id"], records[2]["upload_id"])
+        self.assertEqual([r["report"] for r in records], [False, False, True])
+
     def test_receipt_history_is_bounded(self):
         client = self.client()
         client.session.post.side_effect = lambda *a, **kw: response(body=receipt(kw["data"]))

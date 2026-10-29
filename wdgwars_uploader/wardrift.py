@@ -745,14 +745,15 @@ class MeshReporter:
                 batch.update(error=error, retry_at=retry_at, attempts=batch["attempts"] + 1)
             self._commit(updated)
 
-    def acknowledge(self, batch: dict, receipt: dict) -> dict:
+    def acknowledge(self, batch: dict, receipt: dict, *, upload_id: str = "", report: bool = False) -> dict:
         with self._lock:
             updated = copy.deepcopy(self._data)
             account = self._account(updated, batch["account_id"])
             if receipt["receipt_id"] in account["receipts"]:
                 raise MeshStateError("Receipt ID was already acknowledged; conflicting response retained for review")
             record = {"receipt_id": receipt["receipt_id"], "account_id": batch["account_id"],
-                      "accepted_at": time.time(), "nodes": len(batch["items"]), "receipt": receipt}
+                      "accepted_at": time.time(), "nodes": len(batch["items"]), "receipt": receipt,
+                      "upload_id": upload_id, "report": report}
             account["receipts"][receipt["receipt_id"]] = record
             for it in batch["items"]:
                 account["sent"][it["identity"]] = max(account["sent"].get(it["identity"], 0), it["key"])
@@ -918,7 +919,7 @@ class WardriftClient:
         return str(uuid.UUID(data["account_id"])), ""
 
     def upload_mesh(self, nodes: list[dict[str, Any]], radios: list[dict[str, Any]],
-                    reporter: MeshReporter, *, binding_valid=None) -> MeshResult:
+                    reporter: MeshReporter, *, binding_valid=None, report: bool = False) -> MeshResult:
         """Stage, verify account, then send durable requests in reporter order.
 
         Each client freezes one credential. An in-flight receipt always belongs to
@@ -926,6 +927,7 @@ class WardriftClient:
         """
         res = MeshResult()
         fp = credential_fingerprint(self.api_key)
+        upload_id = str(uuid.uuid4())
         try:
             deferred_capture = False
             try:
@@ -980,7 +982,7 @@ class WardriftClient:
                             continue  # retained for review; later valid reporter sequences can proceed
                         return res
                     receipt = _mesh_json(response)
-                    reporter.acknowledge(batch, receipt)
+                    reporter.acknowledge(batch, receipt, upload_id=upload_id, report=report)
                     res.nodes += len(batch["items"])
                     res.telemetry += len(batch["sample_ids"])
                     res.currency += receipt.get("currency", 0)

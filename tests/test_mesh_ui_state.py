@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import types
 import unittest
 from pathlib import Path
@@ -116,6 +117,21 @@ class ReceiptStateTests(TemporaryState):
         restarted.reconcile_mesh({"account_id": A}, rows + [rows[0]])
         self.assertEqual(restarted.receipts("wardrift"), state.receipts("wardrift"))
         self.assertEqual(restarted.snapshot()["wardrift"]["earned_total"], state.snapshot()["wardrift"]["earned_total"])
+
+    def test_one_row_per_upload_and_none_for_radio_reports(self):
+        state = LiveState()
+        batches = [{**receipt(f"r{i}", accepted=1780000000 + i), "upload_id": "upload-1", "report": False}
+                   for i in range(8)]
+        report = {**receipt("r-report", accepted=1780000900), "upload_id": "upload-2", "report": True}
+        state.reconcile_mesh({"account_id": A}, batches + [report])
+        rows = state.receipts("wardrift")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual((rows[0]["sent"], rows[0]["telemetry"], rows[0]["currency"]), (8, 8, 16))
+        self.assertEqual(rows[0]["availability_seconds"], 2400)
+        self.assertEqual(rows[0]["forwarded"], 0)
+        self.assertIsNone(rows[0]["attempted"])
+        self.assertEqual(rows[0]["t"], 1780000007)
+        self.assertEqual(rows[0]["summary"], "8 nodes acknowledged, 8 health samples, +16 currency, +1 influence")
 
     def test_old_unverified_mesh_rows_cannot_become_current_receipts(self):
         state = LiveState()
@@ -264,6 +280,28 @@ class CoreCoordinationTests(TemporaryState):
         self.obj.wardrift_mesh.stage.side_effect = wardrift.MeshStateError("disk full")
         with self.assertRaises(wardrift.MeshStateError):
             self.obj.stop_mesh()
+
+    def test_shutdown_does_not_wait_for_an_upload_in_progress(self):
+        self.obj.capture.pending_samples.return_value = [{"capture_id": "last"}]
+        self.obj.wardrift_mesh.stage.return_value = ["last"]
+        holding, done = threading.Event(), threading.Event()
+
+        def upload():
+            with self.obj._wardrift_mesh_lock:
+                holding.set()
+                done.wait(30)
+        t = threading.Thread(target=upload, daemon=True)
+        t.start()
+        self.assertTrue(holding.wait(2))
+        started = time.monotonic()
+        try:
+            self.obj.stop_mesh()
+        finally:
+            done.set()
+        self.assertLess(time.monotonic() - started, 1)
+        self.obj.wardrift_mesh.stage.assert_called_once()
+        self.obj.wardrift_mesh.save.assert_called_once()
+        t.join(2)
 
     def test_poller_keeps_independent_mesh_schedule(self):
         with patch("wdgwars_uploader.poller.time.time", return_value=1000):
