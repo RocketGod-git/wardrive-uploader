@@ -216,10 +216,21 @@ class UploaderCore:
         det = det or self._last_detect
         busy = {d.get("port") for d in (self.cfg.get("mesh_devices") or [])
                 if d.get("port") and d.get("transport", "serial") == "serial"}
+        # WardriveESP boards share the mesh radios' USB serial chips, so they are told
+        # apart by asking. Configured mesh radios and the PortaPack are never asked.
+        skip = set()
+        for d in (self.cfg.get("mesh_devices") or []):
+            if d.get("transport", "serial") == "serial":
+                skip.add(detect.pick_mesh_port(d.get("port", "auto"), det) if det else d.get("port"))
+        mayhem_port = self.cfg.get("mayhem_port", "auto")
+        if mayhem_port and mayhem_port.lower() != "auto":
+            skip.add(mayhem_port)
         if det:
             busy |= {d.port for d in det.serial_ports if d.is_mesh_candidate or d.is_portapack}
+            skip |= {d.port for d in det.serial_ports if d.is_portapack}
+        skip.discard(None)
         try:
-            self.wardriver.apply(self.cfg.as_dict(), busy)
+            self.wardriver.apply(self.cfg.as_dict(), busy, skip)
         except Exception:
             log.exception("wardriving setup failed")
 

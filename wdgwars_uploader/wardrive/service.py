@@ -34,6 +34,7 @@ from typing import Any, Callable
 from .. import __version__
 from ..config import config_dir, device_label
 from .ble import BleScanner
+from .boards import BoardBridge
 from .capture import Hit, wpasec_my_nets, wpasec_results, wpasec_upload
 from .gps import GpsHub, gps_ports, lan_addresses, max_age, NET_PORT
 from .monitor import MonitorManager
@@ -136,6 +137,8 @@ class Wardriver:
         self.all_ble = self._load_seen("seen_ble.txt")
         self.last_upload: dict[str, str] = {}
         self.monitor = MonitorManager(on_hit=self._on_hit)
+        self.boards = BoardBridge(on_hit=self._on_hit, on_event=on_event)
+        self.gps.extra = [self.boards.gps]
         self.off: set[str] = set()
         self.wpasec_key = ""
         self._wpasec_lock = threading.Lock()
@@ -193,11 +196,15 @@ class Wardriver:
         return out
 
     # -- lifecycle -------------------------------------------------------------
-    def apply(self, cfg: dict[str, Any], exclude_ports: set[str]) -> None:
-        """Use every adapter, Bluetooth radio and location source found, except
-        the ones switched off. Also picks up GPS ports plugged in since."""
+    def apply(self, cfg: dict[str, Any], exclude_ports: set[str], board_skip: set[str] | None = None) -> None:
+        """Use every adapter, Bluetooth radio, WardriveESP board and location source
+        found, except the ones switched off. Also picks up GPS ports plugged in since.
+        ``board_skip``: COM ports never probed for a WardriveESP board."""
         off = set(cfg.get("hw_off") or [])
         self.off = off
+        self.boards.configure("esp" not in off, {x[4:] for x in off if x.startswith("esp:")},
+                              device_label(cfg.get("upload_device_label", "")),
+                              board_skip if board_skip is not None else exclude_ports)
         key = (cfg.get("wpasec_key") or "").strip()
         if key and key != self.wpasec_key:
             # A new key, or the app just opened: send anything not sent yet and
@@ -220,7 +227,7 @@ class Wardriver:
             self.ble.stop()
             self.ble = None
         elif "bt" not in off and self.ble is None:
-            self.ble = BleScanner()
+            self.ble = BleScanner(on_advert=self.boards.on_advert)
             self.ble.start()
 
     def start(self) -> None:
@@ -238,9 +245,10 @@ class Wardriver:
         if self.wifi:
             self.wifi.off = {x[5:] for x in self.off if x.startswith("wifi:")}
         if "bt" not in self.off:
-            self.ble = BleScanner()
+            self.ble = BleScanner(on_advert=self.boards.on_advert)
             self.ble.start()
         self.monitor.start()
+        self.boards.start()
         self._thread = threading.Thread(target=self._loop, name="wardrive", daemon=True)
         self._thread.start()
         threading.Thread(target=self._gps_sampler, name="wardrive-gps", daemon=True).start()
@@ -256,6 +264,7 @@ class Wardriver:
         self.gps.stop()
         self._gps_key = None
         self.monitor.stop()
+        self.boards.stop()
         if self.ble:
             self.ble.stop()
             self.ble = None
@@ -300,10 +309,15 @@ class Wardriver:
                     self._stop.wait(SCAN_EVERY)
                 bles = self.ble.fresh(SCAN_EVERY + 1) if self.ble else []
                 merged = {n["mac"]: n for n in nets}
-                for n in self.monitor.fresh(SCAN_EVERY + 2):
+                for n in self.monitor.fresh(SCAN_EVERY + 2) + self.boards.fresh_wifi(SCAN_EVERY + 2):
                     if n["mac"] not in merged or n["rssi"] > merged[n["mac"]]["rssi"]:
                         merged[n["mac"]] = n
                 nets = list(merged.values())
+                merged = {n["mac"]: n for n in bles}
+                for n in self.boards.fresh_bt(SCAN_EVERY + 2):
+                    if n["mac"] not in merged or n["rssi"] > merged[n["mac"]]["rssi"]:
+                        merged[n["mac"]] = n
+                bles = list(merged.values())
                 self._ingest(nets, bles)
             except Exception as e:  # noqa: BLE001
                 self.error = f"scan error: {e}"
@@ -330,11 +344,11 @@ class Wardriver:
                 self._last_row[mac] = (fix.lat, fix.lon, it["rssi"], it["utc"])
                 rows.append({
                     "mac": mac, "ssid": it.get("ssid") if kind == "WIFI" else it.get("name"),
-                    "auth": it.get("auth", "") if kind == "WIFI" else "", "t": round(it["utc"], 3),
+                    "auth": it.get("auth", ""), "t": round(it["utc"], 3),
                     "ch": it.get("channel"), "freq": it.get("freq"), "rssi": it["rssi"],
                     "lat": round(fix.lat, 7), "lon": round(fix.lon, 7),
                     "alt": None if fix.alt is None else round(fix.alt, 1), "acc": round(fix.acc, 1),
-                    "mfgr": it.get("mfgr"), "type": kind,
+                    "mfgr": it.get("mfgr"), "type": it.get("type") or kind,
                 })
                 run_set = self.run_wifi if kind == "WIFI" else self.run_ble
                 if mac not in run_set:
@@ -639,6 +653,7 @@ class Wardriver:
                 "adapters": [dict(a, id=f"wifi:{a['name']}") for a in (self.wifi.adapters if self.wifi else [])]
                             + self.monitor.status(),
                 "captures": self._captures_view(),
+                "boards": self.boards.status(),
                 "bt": {"state": self.ble.state if self.ble else ("off" if "bt" in self.off else "starting"),
                        "detail": self.ble.detail if self.ble else ""},
                 "pending": {t: self.pending(t) for t in TARGETS},

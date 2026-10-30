@@ -11,13 +11,14 @@ import asyncio
 import logging
 import threading
 import time
-from typing import Any
+from typing import Any, Callable
 
 log = logging.getLogger("wdgwars.ble")
 
 
 class BleScanner:
-    def __init__(self) -> None:
+    def __init__(self, on_advert: Callable[[Any, Any], None] | None = None) -> None:
+        self.on_advert = on_advert        # every advert, for the WardriveESP bridge
         self._lock = threading.Lock()
         self._seen: dict[str, dict[str, Any]] = {}
         self._stop = threading.Event()
@@ -45,6 +46,11 @@ class BleScanner:
         from bleak import BleakScanner
 
         def on_adv(dev, adv) -> None:
+            if self.on_advert:
+                try:
+                    self.on_advert(dev, adv)
+                except Exception:  # noqa: BLE001
+                    log.debug("board advert hook failed", exc_info=True)
             mfgr = next(iter(adv.manufacturer_data), None) if adv.manufacturer_data else None
             rec = {"mac": dev.address.lower(), "name": adv.local_name or "", "rssi": int(adv.rssi),
                    "mfgr": mfgr, "at": time.monotonic(), "utc": time.time()}

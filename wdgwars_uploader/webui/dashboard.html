@@ -2081,6 +2081,28 @@ function renderHardware(s){
         dot:isOff?'':(a.state==='not ready'?'off':'on'),tip:a.name,off:isOff,show:true});
     }
   }
+  const eb=w.boards||{}, espOff=off.has('esp'), boards=eb.boards||[], away=eb.elsewhere||[];
+  const linked=boards.filter(b=>b.phase==='streaming'||b.phase==='linked').length;
+  const holders=[...new Set(away.map(a=>a.holder))].join(', ');
+  tiles.push({id:'esp',n:'WardriveESP boards',d:espOff?'off':(linked?`${linked} linked`:(away.length?`${away.length} nearby · held by ${holders}`:'looking for boards')),
+    dot:espOff?'':(linked?'on':'warn'),tip:away.map(a=>`${a.name}: held by ${a.holder}`).join('\n')||'Links every free board over Bluetooth, or over USB when plugged in',off:espOff,show:true});
+  if(!espOff){
+    for(const b of boards){
+      const parts=[b.transport==='USB'?'USB':'Bluetooth'];
+      if(b.phase==='streaming'){
+        parts.push(b.role); if(b.channels) parts.push(b.channels);
+        parts.push(b.role==='Bluetooth'?`${fmt(b.bt)} devices`:`${fmt(b.aps)} APs`);
+        if(b.captures) parts.push(`${fmt(b.captures)} captures`);
+      } else parts.push({connecting:'linking…',linked:'linked, starting',offline:'reconnecting…'}[b.phase]||b.phase);
+      if(b.battery!=null) parts.push(`${b.battery}%`);
+      tiles.push({id:b.id,n:b.board?`${b.name} · ${b.board}`:b.name,
+        d:b.crashing?'keeps crashing, not relinking':(b.foreign?'not running WardriveESP':parts.join(' · ')),
+        dot:b.phase==='streaming'?'on':(b.phase==='offline'||b.foreign||b.crashing?'off':'warn'),
+        tip:[b.board,b.chip,b.fw&&('fw '+b.fw),b.channel_list&&('ch '+b.channel_list)].filter(Boolean).join(' · '),off:false,show:true});
+    }
+    for(const id of off) if(id.startsWith('esp:')&&!boards.some(b=>b.id===id))
+      tiles.push({id,n:'WardriveESP-'+id.slice(4),d:'off on this PC',dot:'',tip:'',off:true,show:true});
+  }
   const bt=w.bt||{}, bl=w.ble||{}, btOff=off.has('bt');
   tiles.push({id:'bt',n:'Bluetooth',d:btOff?'off':(bt.state==='scanning'?`${fmt(bl.in_view)} in view`:(bt.detail||bt.state||'starting')),
     dot:btOff?'':(bt.state==='scanning'?'on':(bt.state==='unavailable'?'off':'warn')),tip:bt.detail||'',off:btOff,show:true});

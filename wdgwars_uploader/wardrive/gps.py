@@ -391,6 +391,8 @@ def gps_ports(exclude: set[str]) -> list[str]:
 @dataclass
 class GpsHub:
     sources: list[_Source] = field(default_factory=list)
+    # Sources that live elsewhere and outlast a restart of the hub (WardriveESP board GPS).
+    extra: list[Any] = field(default_factory=list)
 
     def start(self, net_port: int, exclude: set[str], off: set[str]) -> None:
         """Every location source there is; the ones in ``off`` are listed but not run."""
@@ -410,12 +412,13 @@ class GpsHub:
         self.sources = []
 
     def best(self) -> Fix | None:
-        fixes = [s.fix for s in self.sources if s.fix and s.fix.usable()]
+        fixes = [s.fix for s in self.sources + self.extra if s.fix and s.fix.usable()]
         return min(fixes, key=lambda f: (f.acc, f.age())) if fixes else None
 
     def status(self) -> dict[str, Any]:
         b = self.best()
-        return {"fix": b.as_dict() if b else None, "sources": [s.status() for s in self.sources]}
+        return {"fix": b.as_dict() if b else None,
+                "sources": [s.status() for s in self.sources] + [s.status() for s in self.extra if s.present]}
 
 
 def lan_addresses() -> list[str]:
