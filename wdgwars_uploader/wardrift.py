@@ -49,6 +49,8 @@ CHUNK = 5000   # aircraft per file, well under the 10 MiB / 200,000-record limit
 MESH_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
            f"Chrome/130.0.0.0 Safari/537.36 wdgwars-uploader/{__version__}")
 MESH_CHUNK = 100   # nodes per batch; larger batches can outlast the request timeout
+MESH_SAMPLE_CHUNK = 10   # health samples per batch; Wardrift takes over a second for each
+MESH_TIMEOUT = 90.0   # Cloudflare ends a request at 100 s
 MESH_BACKFILL_SECS = 72 * 3600   # how far back the first mesh upload reaches
 LOG_BODY_MAX = 4000   # response characters kept in the log per mesh call
 
@@ -701,7 +703,7 @@ class MeshReporter:
                     tel = candidate["wire"].get("telemetry")
                     if part and bool(tel) != bool(part[0]["wire"].get("telemetry")):
                         break
-                    if tel and len(samples) >= 100:
+                    if tel and len(samples) >= MESH_SAMPLE_CHUNK:
                         break
                     body["nodes"].append(candidate["wire"])
                     if len(_encode(body).encode("utf-8")) > MAX_MESH_BYTES:

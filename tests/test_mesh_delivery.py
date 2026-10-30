@@ -221,7 +221,7 @@ class LedgerTest(unittest.TestCase):
         for batch in batches:
             nodes = json.loads(batch["payload"])["nodes"]
             self.assertLessEqual(len(nodes), 500)
-            self.assertLessEqual(sum("telemetry" in n for n in nodes), 100)
+            self.assertLessEqual(sum("telemetry" in n for n in nodes), w.MESH_SAMPLE_CHUNK)
             self.assertLessEqual(len(batch["payload"].encode("utf-8")), w.MAX_MESH_BYTES)
         self.assertEqual(sum(len(b["sample_ids"]) for b in batches), 101)
         self.assertEqual(sum(len(b["items"]) for b in batches), 702)

@@ -553,7 +553,7 @@ class UploaderCore:
                 else:
                     self._stage_mesh_samples()
                 nodes = mesh.filter_outlier_positions(self.capture.snapshot())
-                res = wardrift.WardriftClient(key, timeout=30.0).upload_mesh(
+                res = wardrift.WardriftClient(key, timeout=wardrift.MESH_TIMEOUT).upload_mesh(
                     nodes, [], self.wardrift_mesh, report=quiet,
                     binding_valid=lambda: not self._mesh_stopping.is_set()
                     and self.cfg.get("mesh_enabled", True)
