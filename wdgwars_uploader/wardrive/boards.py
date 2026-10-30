@@ -879,6 +879,9 @@ class BoardBridge(_Listener):
             self.advert_posted = {k: v for k, v in self.advert_posted.items() if v >= cutoff}
         if self.gps.fix and self.gps.fix.age() > 10:
             self.gps.state = "no fix yet"
+        for s in self.sessions.values():
+            if s.info.fw and s.info.phase == STREAMING and now - s.since > 15:
+                self._announce(s)
         if self._tick % 5 == 0 and self.enabled:
             self._drop_stalled()
             self._maintain_fallback()
@@ -947,6 +950,8 @@ class BoardBridge(_Listener):
             self._log(f"{s.info.name} ({bid}) is {nxt.name}")
             s.info.name = s.t.name = nxt.name
             self._dirty = True
+            if s.info.fw:
+                self._announce(s)
         self._taken_check(bid, nxt, now)
         self._note_holder(bid, nxt, now)
 
@@ -1349,10 +1354,8 @@ class BoardBridge(_Listener):
                       f" · {len(i.supported)} channels" + (" · Bluetooth scan" if i.bt_capable else "")
                       + (" · GPS" if i.gps_capable else "") + (" · capture" if i.cap_capable else "")
                       + (f" · {i.board_name}" if i.board_name else "") + f" · {s.t.kind}")
-            if i.key not in self.announced:
-                self.announced.add(i.key)
-                self.on_event(f"{i.name} linked over {'USB' if s.t.kind == 'USB' else 'Bluetooth'}"
-                              f" ({i.board_name or i.chip or 'ESP32'} · fw {i.fw or '?'})")
+            if P.board_suffix(i.name):
+                self._announce(s)
             self._introduce(s)
             self._dirty = True
             if before != (i.supported, i.bt_capable, i.cap_capable, i.bands):
@@ -1367,6 +1370,15 @@ class BoardBridge(_Listener):
             self._check_crash_loop(s, line)
         elif line.startswith("WD:") and not line.startswith(("WD:STATUS", "WD:HEALTH")):
             self._log(f"[{s.info.tag}] {line[:200]}")
+
+    def _announce(self, s: _Session) -> None:
+        """One activity line per board per run, once its name and details are known."""
+        i = s.info
+        if i.key in self.announced or i.id in self.announced:
+            return
+        self.announced.update((i.key, i.id))
+        self.on_event(f"{i.name} linked over {'USB' if s.t.kind == 'USB' else 'Bluetooth'}"
+                      f" ({i.board_name or i.chip or 'ESP32'} · fw {i.fw or '?'})")
 
     def _check_crash_loop(self, s: _Session, line: str) -> None:
         """Three different boots ending in a crash or watchdog reset within 90 s: stop
