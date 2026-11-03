@@ -10,6 +10,8 @@ It runs in the tray, finds the hardware you plug in and uses it. No setup per de
 
 - **Wi-Fi** from every adapter in the PC, plus monitor mode on USB adapters with drivers ported from the Wardrive Go Android app: MediaTek MT7612U (Alfa AWUS036ACM, Panda PAU0D) and Atheros AR9271. Monitor mode hops every 2.4 and 5 GHz channel.
 - **Bluetooth** from the PC's Bluetooth radio.
+- **Boards**: WardriveESP and Piglet boards and Biscuits link by themselves over Bluetooth, or over USB when plugged in. ESP32 Marauder, GhostESP and Flipper Zero run on their own over USB. Boards linked to a phone show who holds them.
+- **SD cards**: offline runs on WardriveESP boards, and WiGLE files on GhostESP and Flipper Zero SD cards, come in on their own and go out with the next upload.
 - **Handshakes and PMKIDs** captured passively in monitor mode, saved as hashcat 22000 lines and sent to wpa-sec seconds after capture. Each capture shows its progress on wpa-sec and the password once it is cracked.
 - **Location** from any source there is: a USB or Bluetooth GPS, your phone, or Windows location. The most accurate fix wins and every row records its accuracy.
 - **Phone GPS with no app.** Click the Phone GPS tile, scan the QR code and the phone streams its location to the PC from its browser. GPS apps that send NMEA work too.
