@@ -2299,10 +2299,10 @@ function renderHardware(s){
     let d;
     if(isOff) d='location · off';
     else if(phoneOn) d=`connected · ±${Math.round(x.fix.acc)} m${inUse?' · in use':''}`;
-    else if(f) d=`location · ±${Math.round(f.acc)} m${f.sats?` · ${f.sats} sats`:''}${inUse?' · in use':''}`;
+    else if(f) d=`${x.id==='gps:windows'&&x.detail?x.detail:'location'} · ±${Math.round(f.acc)} m${f.sats?` · ${f.sats} sats`:''}${inUse?' · in use':''}`;
     else if(x.id==='gps:phone') d='click to connect your phone';
     else d='location · '+(x.state==='fix'?'no fix':x.state);
-    tiles.push({id:x.id,n:x.name+(x.detail&&x.id==='gps:windows'&&f?` (${x.detail})`:''),d,
+    tiles.push({id:x.id,n:x.name,d,
       dot:isOff?'':(f||phoneOn?'on':(x.state==='unavailable'?'off':'warn')),
       tip:x.id==='gps:phone'?`Send NMEA (TCP or UDP) to ${(w.lan||[]).join(' or ')||'this PC'} port ${w.net_port}`:(x.detail||''),off:isOff,show:true});
   }
