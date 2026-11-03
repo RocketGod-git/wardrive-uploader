@@ -93,11 +93,14 @@ def csv_header(label: str) -> str:
             f"device={device_label(label)},display=,board=,brand=Windows\n{CSV_COLUMNS}\n")
 
 
-MAX_FILE_BYTES = 9_500_000   # Wardrift takes at most 10 MiB per file, before and after compression
+MAX_FILE_BYTES = 9_500_000   # per-file cap for WiGLE and WDGWars, before and after compression
 MAX_FILE_ROWS = 150_000
+WARDRIFT_MAX_BYTES = 49_000_000   # Wardrift takes up to 50 MB per file, before and after compression
+WARDRIFT_MAX_ROWS = 990_000       # and up to 1,000,000 rows
 
 
-def _chunks(rows: list[dict[str, Any]], header: str):
+def _chunks(rows: list[dict[str, Any]], header: str,
+            max_bytes: int = MAX_FILE_BYTES, max_rows: int = MAX_FILE_ROWS):
     """(rows, csv bytes) pieces, each under the per-file size and row limits."""
     head = header.encode("utf-8")
     part: list[dict[str, Any]] = []
@@ -105,7 +108,7 @@ def _chunks(rows: list[dict[str, Any]], header: str):
     size = len(head)
     for r in rows:
         line = (csv_row(r) + "\n").encode("utf-8")
-        if part and (size + len(line) > MAX_FILE_BYTES or len(part) >= MAX_FILE_ROWS):
+        if part and (size + len(line) > max_bytes or len(part) >= max_rows):
             yield part, head + b"".join(lines)
             part, lines, size = [], [], len(head)
         part.append(r)
@@ -544,7 +547,8 @@ class Wardriver:
                 good = sorted((r for r in latest.values() if recent.get(r["mac"], 0) < cutoff),
                               key=lambda r: r["t"])
             ok_all = True
-            for part, raw in _chunks(good, csv_header(label)):
+            caps = (WARDRIFT_MAX_BYTES, WARDRIFT_MAX_ROWS) if target == "wardrift" else (MAX_FILE_BYTES, MAX_FILE_ROWS)
+            for part, raw in _chunks(good, csv_header(label), *caps):
                 buf = io.BytesIO()
                 with gzip.GzipFile(fileobj=buf, mode="wb", filename="wardrive.csv") as gz:
                     gz.write(raw)
