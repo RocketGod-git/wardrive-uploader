@@ -518,6 +518,13 @@ class _Beacon:
     fw: str | None = None
     link_end: int = 0
     temp_c: int | None = None
+    scanning: bool = False
+    mode: int = 0
+    gps: bool = False
+    updating: bool = False
+    count: int = 0
+    board: str | None = None
+    battery: int | None = None
 
 
 class _HeldElsewhere:
@@ -566,11 +573,14 @@ class BoardBridge(_Listener):
         self._bts: dict[str, dict[str, Any]] = {}
         self._published: list[dict[str, Any]] = []
         self._nearby: list[dict[str, Any]] = []
+        self._seen: list[dict[str, Any]] = []
         self.usb = UsbBoards(self)
         self.biscuits = BISC.Biscuits(self)
         self.region = P.Region.for_country(windows_country())
-        # settings, set from any thread through configure()
-        self.enabled = True
+        # settings, set from any thread through configure(); off until the saved settings arrive,
+        # so a board the user switched off is never linked for a moment at startup
+        self.enabled = False
+        self.configured = False
         self.off: set[str] = set()
         self.off_other: set[str] = set()     # other devices switched off ("ser:..." / "bisc:...")
         self.nickname = ""
@@ -690,6 +700,7 @@ class BoardBridge(_Listener):
         def apply() -> None:
             was = self.enabled
             self.enabled = enabled
+            self.configured = True
             newly_off = off - self.off
             self.off = set(off)
             if nick != self.nickname:
@@ -989,6 +1000,8 @@ class BoardBridge(_Listener):
         self.link_fails.clear()
         self.outbox_defer_since = 0.0
         for s in self.sessions.values():
+            if s.sd_src is not None:
+                s.sd_src.linked = False      # an SD copy in progress stops; the run stays on the card
             s.t.close()
         self.sessions.clear()
         self.usb_held.clear()
@@ -1124,7 +1137,8 @@ class BoardBridge(_Listener):
                 or (prev.name if prev and P.board_suffix(prev.name) == P.board_suffix(b.name) else None) or b.name
             nxt = _Beacon(bid, name, rssi, now, status or b.linked, holder=b.holder if (status or b.linked) else "",
                           holder_iphone=b.holder_iphone, usb=b.usb, fw=b.fw, link_end=prev.link_end if prev else 0,
-                          temp_c=b.temp_c)
+                          temp_c=b.temp_c, scanning=b.scanning, mode=b.mode, gps=b.gps, updating=b.updating,
+                          count=b.count, board=prev.board if prev else None, battery=prev.battery if prev else None)
         elif status:
             if prev is None:
                 return
@@ -1138,6 +1152,9 @@ class BoardBridge(_Listener):
                           fw=prev.fw if prev else None)
         if x is not None:
             nxt.link_end = x.link_end
+            if not x.frame_b:
+                nxt.board = P.extras_board_name(x.board) if x.board is not None else nxt.board
+                nxt.battery = x.battery if x.battery is not None else nxt.battery
         if prev is None or (prev.linked, prev.holder, prev.name) != (nxt.linked, nxt.holder, nxt.name):
             self._dirty = True
         self.beacons[bid] = nxt
@@ -1824,9 +1841,24 @@ class BoardBridge(_Listener):
                   for b in self.beacons.values()
                   if b.linked and b.id not in self.sessions and P.board_suffix(b.name) not in here
                   and not self._on_usb(b.name) and not (b.holder and b.holder == self.nickname and not b.holder_iphone)]
+        # Every board heard but not linked here: held by another phone or host (who, shown like Wardrive Go
+        # shows it), or free (saving its scan to its SD card while nothing holds it).
+        seen = []
+        for b in self.beacons.values():
+            sfx = P.board_suffix(b.name)
+            if b.id in self.sessions or (sfx and sfx in here) or self._on_usb(b.name):
+                continue
+            mine = bool(b.holder and b.holder == self.nickname and not b.holder_iphone)
+            seen.append({"id": f"esp:{sfx or b.id}", "name": b.name, "rssi": b.rssi, "linked": b.linked,
+                         "holder": (b.holder or ("a USB host" if b.usb else "another phone")) if b.linked else "",
+                         "iphone": b.holder_iphone, "usb": b.usb, "fw": b.fw, "temp": b.temp_c, "board": b.board,
+                         "battery": b.battery, "scanning": b.scanning, "mode": ("wifi", "bt", "cap", "radar")[b.mode & 3],
+                         "gps": b.gps, "updating": b.updating, "count": b.count, "mine": mine,
+                         "age": int(now - b.seen_at), "off_here": bool(sfx and sfx in self.off)})
         with self._lock:
             self._published = out
             self._nearby = sorted(nearby, key=lambda b: b["name"])
+            self._seen = sorted(seen, key=lambda b: (not b["linked"], b["name"]))
 
     def status(self) -> dict[str, Any]:
         with self._lock:
@@ -1836,7 +1868,7 @@ class BoardBridge(_Listener):
                 others.append(dict(v, got_aps=len(c[0]) if c else 0, got_bt=len(c[1]) if c else 0))
             others.sort(key=lambda d: d.get("name", ""))
             return {"enabled": self.enabled, "boards": list(self._published), "elsewhere": list(self._nearby),
-                    "region": self.region.name, "others": others,
+                    "region": self.region.name, "others": others, "nearby": list(self._seen),
                     "sd": self.sd.status() if self.sd else None}
 
 
@@ -1876,6 +1908,9 @@ class UsbBoards:
             return
         was_enabled = True
         while not self._stop.is_set():
+            if not self.bridge.configured:      # nothing is asked before the saved settings arrive
+                self._stop.wait(0.5)
+                continue
             try:
                 enabled = self.bridge.enabled
                 with self._lock:

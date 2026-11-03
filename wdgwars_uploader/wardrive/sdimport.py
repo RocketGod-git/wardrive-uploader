@@ -323,7 +323,7 @@ class SdImport:
                 log.info("SD import: %s failed: %s", f.path, e)
                 if stop():
                     break
-        parts = [f"imported {imported} file{'s' if imported != 1 else ''}", f"{rows:,} rows", f"{new:,} new networks"]
+        parts = [f"imported {imported} file{'s' if imported != 1 else ''}", f"{rows:,} rows", f"{new:,} new network{'s' if new != 1 else ''}"]
         if skipped:
             parts.append(f"{skipped} not WiGLE")
         if failed:

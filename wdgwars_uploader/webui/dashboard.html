@@ -112,20 +112,76 @@ h1{font-size:20px;letter-spacing:3px;margin:0;font-weight:700;
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
 .dev .n{font-weight:700;color:#dfe} .dev .d{font-size:11px;color:var(--muted);overflow-wrap:anywhere}
 .dev>div:nth-child(2){min-width:0;flex:1}
-.dev .n{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dev .n{overflow-wrap:anywhere}
 .dev.isoff{opacity:.55}
-.dev.big{grid-column:span 2;flex-direction:column;align-items:stretch;gap:8px;padding:12px 14px}
-@media(max-width:600px){.dev.big{grid-column:span 1}}
-.dev.big .bhead{display:flex;gap:10px;align-items:center;min-width:0}
-.dev.big .bhead .n{flex:1;min-width:0;font-size:14px}
-.dev.big .bsub{font-size:11px;color:var(--muted);overflow-wrap:anywhere}
-.dev.big>div:nth-child(2){flex:none}
-.bstats{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:6px}
-.bs{background:#070c12;border:1px solid var(--line);border-radius:6px;padding:6px 8px;min-width:0}
-.bs b{display:block;font-size:15px;color:#dfe;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
-.bs span{display:block;font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.bs.got{border-color:#11463a}.bs.got b{color:var(--green)}
-.bs.warn b{color:var(--amber)}.bs.hot b{color:var(--red)}
+/* device fleets: the WardriveESP bridge (master switch + its boards and Biscuits) and USB scanners */
+#sec-fleet h2{margin-bottom:10px}
+.fleet{--fc:var(--cyan);margin-top:10px;border:1px solid color-mix(in srgb,var(--fc) 45%,transparent);border-radius:14px;
+  background:radial-gradient(120% 140% at 0% 0%,color-mix(in srgb,var(--fc) 9%,transparent),transparent 55%),linear-gradient(180deg,#08111a,#05090e);
+  box-shadow:0 0 0 1px rgba(0,0,0,.4),0 0 26px color-mix(in srgb,var(--fc) 12%,transparent);overflow:hidden}
+.fleet:first-child{margin-top:0}
+.fleet.usb{--fc:var(--mag)}
+.fleet.isoff{--fc:#55606b;box-shadow:none}
+.fhead{display:flex;align-items:center;gap:16px;padding:14px 16px;border-bottom:1px solid color-mix(in srgb,var(--fc) 30%,transparent)}
+.ftitle{display:flex;flex-direction:column;min-width:0}
+.ftitle b{font-size:15px;letter-spacing:3px;color:var(--fc);text-transform:uppercase;text-shadow:0 0 14px color-mix(in srgb,var(--fc) 50%,transparent)}
+.ftitle span{font-size:12px;color:var(--txt);margin-top:3px}
+.fsum{display:flex;gap:22px;margin-left:auto;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.fsum .k{display:flex;flex-direction:column;align-items:flex-end}
+.fsum .k b{font-size:22px;color:#eef;font-variant-numeric:tabular-nums;line-height:1.05}
+.fsum .k span{font-size:9px;letter-spacing:1px;color:var(--muted);text-transform:uppercase}
+.fsum .k.c b{color:var(--fc)} .fsum .k.got b{color:var(--green);text-shadow:0 0 12px rgba(37,244,167,.35)}
+.master{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:10px;border:1px solid var(--fc);
+  background:color-mix(in srgb,var(--fc) 10%,#05090e);box-shadow:inset 0 0 12px color-mix(in srgb,var(--fc) 15%,transparent)}
+.master .ml{display:flex;flex-direction:column;line-height:1.15}
+.master .ml b{font-size:10px;letter-spacing:2px;color:var(--fc)}
+.master .ml span{font-size:10px;color:var(--muted)}
+.master .hwsw{margin-left:0;transform:scale(1.25)}
+.fsd{padding:9px 16px;border-bottom:1px solid color-mix(in srgb,var(--fc) 20%,transparent);font-size:12px;color:var(--txt);display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+  background:linear-gradient(90deg,rgba(37,244,167,.07),transparent)}
+.fsd .ico{color:var(--green);font-weight:700}
+.fsd .bar{flex:1;min-width:120px;height:7px;border-radius:4px;background:#0f1a24;overflow:hidden;max-width:420px}
+.fsd .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--green));box-shadow:0 0 10px var(--cyan)}
+.fnote{padding:12px 16px;font-size:12px;color:var(--muted)}
+.fsec{padding:10px 16px 0;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--muted)}
+.fcards{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:12px;padding:12px 14px 14px}
+.bc{--acc:var(--cyan);position:relative;border:1px solid color-mix(in srgb,var(--acc) 35%,var(--line));border-radius:12px;padding:12px 14px 11px;overflow:hidden;min-width:0;
+  background:radial-gradient(130% 90% at 100% 0%,color-mix(in srgb,var(--acc) 14%,transparent),transparent 60%),#070c12}
+.bc:before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--acc);box-shadow:0 0 14px var(--acc)}
+.bc.idle:before{background:var(--amber);box-shadow:0 0 10px var(--amber)}.bc.bad:before{background:var(--red);box-shadow:0 0 10px var(--red)}
+.bc.away{border-style:dashed}.bc.away:before{opacity:.55}
+.bc.isoff{filter:saturate(.25);opacity:.55}
+.bc .top{display:flex;align-items:flex-start;gap:10px}
+.bc .nm{flex:1;min-width:0}
+.bc .nm b{display:block;font-size:15px;color:#f2f6ff;overflow-wrap:anywhere}
+.bc .nm span{display:block;font-size:11px;color:var(--acc);overflow-wrap:anywhere;margin-top:1px}
+.bpills{display:flex;gap:5px;flex-wrap:wrap;margin:9px 0 10px}
+.bp{--pc:var(--muted);font-size:10px;letter-spacing:1px;text-transform:uppercase;border:1px solid color-mix(in srgb,var(--pc) 60%,transparent);
+  background:color-mix(in srgb,var(--pc) 12%,transparent);border-radius:20px;padding:2px 8px;color:var(--pc);white-space:nowrap}
+.bp.usb{--pc:var(--cyan)}.bp.ble{--pc:#4da3ff}.bp.cap{--pc:var(--amber)}.bp.wifi{--pc:var(--green)}.bp.bt{--pc:#a78bfa}
+.bp.ch{--pc:#8fb3c9}.bp.warn{--pc:var(--amber)}.bp.bad{--pc:var(--red)}.bp.acc{--pc:var(--acc)}.bp.held{--pc:#ff7ab8}.bp.free{--pc:var(--green)}
+.held{display:flex;align-items:center;gap:8px;margin:2px 0 10px;padding:8px 10px;border-radius:8px;border:1px solid rgba(255,122,184,.35);
+  background:linear-gradient(90deg,rgba(255,122,184,.12),transparent);font-size:12px;color:#ffd2e6}
+.held b{color:#fff}
+.held.free{border-color:rgba(37,244,167,.35);background:linear-gradient(90deg,rgba(37,244,167,.10),transparent);color:#c9ffe9}
+.bhero{display:flex;gap:8px;margin-bottom:10px}
+.bhero .h{flex:1;min-width:0;border-radius:9px;background:#0a121b;border:1px solid #111d29;padding:8px 10px}
+.bhero .h b{display:block;font-size:24px;line-height:1.05;color:var(--acc);font-variant-numeric:tabular-nums;text-shadow:0 0 14px color-mix(in srgb,var(--acc) 35%,transparent)}
+.bhero .h span{display:block;font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+.bhero .h.got{border-color:#12453a;background:linear-gradient(180deg,rgba(37,244,167,.12),rgba(37,244,167,.02))}.bhero .h.got b{color:var(--green);text-shadow:0 0 14px rgba(37,244,167,.4)}
+.bhero .h.cap{border-color:#4a3a12;background:linear-gradient(180deg,rgba(255,179,0,.10),rgba(255,179,0,.02))}.bhero .h.cap b{color:var(--amber);text-shadow:0 0 14px rgba(255,179,0,.35)}
+.meta{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:6px 12px;font-size:12px}
+.meta div{min-width:0;color:#dfe7f2;overflow-wrap:anywhere}
+.meta div i{font-style:normal;color:var(--muted);font-size:9px;letter-spacing:1px;text-transform:uppercase;margin-right:6px}
+.meta .warn{color:var(--amber)}.meta .hot{color:var(--red)}.meta .good{color:var(--green)}.meta .cool{color:#4da3ff}.meta .acc{color:var(--acc)}
+.batt{display:inline-block;width:22px;height:10px;border:1px solid currentColor;border-radius:2px;position:relative;vertical-align:-1px;margin-right:4px}
+.batt:after{content:"";position:absolute;right:-3px;top:2px;width:2px;height:4px;background:currentColor}
+.batt i{position:absolute;left:1px;top:1px;bottom:1px;background:currentColor}
+.sig{display:inline-flex;gap:1px;align-items:flex-end;height:10px;margin-right:5px;vertical-align:-1px}
+.sig i{width:3px;background:#24313f;border-radius:1px}.sig i.on{background:currentColor}
+.bc .sdp{margin-top:9px;height:5px;border-radius:3px;background:#0f1a24;overflow:hidden}
+.bc .sdp i{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--green));box-shadow:0 0 8px var(--green)}
+@media(max-width:800px){.fhead{flex-wrap:wrap}.fsum{margin-left:0;justify-content:flex-start}}
 .counter.clickable{cursor:pointer} .counter.clickable:hover{border-color:var(--amber)}
 .keytbl{width:100%;border-collapse:collapse;font-size:12px}
 .keytbl th{text-align:left;font-size:9px;letter-spacing:1px;color:var(--muted);text-transform:uppercase;padding:5px 6px;border-bottom:1px solid var(--line)}
@@ -582,7 +638,7 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
   </header>
   <div class="updbar" id="updbar" style="display:none"></div>
   <nav class="secnav" id="secnav">
-    <a href="#sec-hw">Hardware</a><a href="#plats">Accounts</a><a href="#sec-live">Live</a>
+    <a href="#sec-hw">Hardware</a><a href="#sec-fleet">Boards</a><a href="#plats">Accounts</a><a href="#sec-live">Live</a>
     <a href="#sec-boards">Leaderboards</a><a href="#card-uploads">Uploads</a><a href="#card-activity">Activity</a><a href="#card-settings">Settings</a>
   </nav>
 
@@ -636,6 +692,12 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
         <div class="counter pmk clickable" data-keys="1" title="Click for every key wpa-sec has cracked for your account"><div class="num" id="n-pmk">0</div><div class="lbl">PMKIDs</div>
           <div class="sess" id="t-pmk"></div><div class="sess" id="s-pmk"></div></div>
       </div>
+    </div>
+
+    <!-- boards: the WardriveESP bridge (its master switch with the boards and Biscuits it links) and USB scanners -->
+    <div class="card col-12" id="sec-fleet">
+      <h2>Boards and scanners</h2>
+      <div id="hw-fleet"></div>
     </div>
 
     <!-- games -->
@@ -857,19 +919,134 @@ function fmtDur(s){s=Math.max(0,Math.floor(s));const h=Math.floor(s/3600),m=Math
   return h?`${h}h ${m}m`:(m?`${m}m ${ss}s`:`${ss}s`);}
 /** "12m", "3h 05m": a link or board age that only changes once a minute. */
 function fmtAge(s){s=Math.max(0,Math.floor(s/60));return s<60?`${s}m`:`${Math.floor(s/60)}h ${String(s%60).padStart(2,'0')}m`;}
-/** One stat box on a device card. */
-function bstat(k,v,cls,tip){return {k,v,cls:cls||'',tip:tip||''};}
-function battStat(o){
-  if(o.battery==null) return null;
+/** Each board model and device kind gets its own color, so a fleet reads at a glance. */
+const MODEL_ACC=[['koko','#ff2d95'],['awok','#ff8a3d'],['ghost board','#25f4a7'],['poltergeist','#7cf05a'],['biscuit','#ffb300'],
+  ['mini v3','#a78bfa'],['piglet','#ff7ab8'],['marauder','#ff2d95'],['ghost esp','#25f4a7'],['flipper','#ff8a3d']];
+function accFor(...names){const t=names.filter(Boolean).join(' ').toLowerCase();const m=MODEL_ACC.find(([k])=>t.includes(k));return m?m[1]:'#00e5ff';}
+function sigBars(rssi){const n=rssi>=-60?4:rssi>=-70?3:rssi>=-80?2:1;return `<span class="sig">${[4,6,8,10].map((h,i)=>`<i class="${i<n?'on':''}" style="height:${h}px"></i>`).join('')}</span>`;}
+function battIcon(p){return `<span class="batt"><i style="width:${Math.max(1,Math.round(p*0.18))}px"></i></span>`;}
+function metaRow(k,v,cls){return v==null||v===''?'':`<div class="${cls||''}"><i>${escHtml(k)}</i>${v}</div>`;}
+function battMeta(o){
+  if(o.battery==null) return '';
+  const cls=o.battery<=15?'hot':(o.battery<=30?'warn':'good');
   const extra=[o.batt_mv?`${(o.batt_mv/1000).toFixed(2)} V`:'',o.batt_rate!=null?`${o.batt_rate>0?'+':''}${o.batt_rate.toFixed(1)}%/h`:''].filter(Boolean).join(' · ');
-  return bstat('battery',`${o.battery}%`,o.battery<=15?'hot':(o.battery<=30?'warn':''),extra);
+  return `<div class="${cls}" title="${escHtml(extra)}"><i>batt</i>${battIcon(o.battery)}${o.battery}%${o.batt_rate!=null?` <span style="color:var(--muted)">${o.batt_rate>0?'+':''}${o.batt_rate.toFixed(1)}%/h</span>`:''}</div>`;
 }
-function tempStat(t){return t==null?null:bstat('temp',`${t} °C`,t>=75?'hot':(t>=60?'warn':''));}
-function gotStats(o){
-  const out=[bstat('Wi-Fi collected ↑',fmt(o.got_aps),'got','Unique networks this device sent since the app started (SD card runs included)')];
-  if(o.got_bt) out.push(bstat('BT collected ↑',fmt(o.got_bt),'got','Unique Bluetooth devices this device sent since the app started'));
-  return out;
+function tempMeta(t){return t==null?'':metaRow('temp',`${t} °C`,t>=75?'hot':(t>=60?'warn':(t<=35?'cool':'good')));}
+function chipName(c){return c?escHtml(String(c).toUpperCase().replace(/^ESP32-?/,'ESP32-')):'';}
+const ROLE_PILL={capture:{t:'capture',cls:'cap'},'Wi-Fi':{t:'Wi-Fi',cls:'wifi'},Bluetooth:{t:'Bluetooth',cls:'bt'}};
+/** One card. o: {id, acc, name, sub, state(live/idle/bad/away), off, sw, pills[], banner, hero[], meta, sdPct, tip} */
+function devCard(o){
+  const sw=o.sw?`<label class="hwsw" title="Use it on this PC"><input type="checkbox" data-hw="${escHtml(o.id)}"${o.off?'':' checked'}><span></span></label>`:'';
+  const pills=(o.pills||[]).map(p=>`<span class="bp ${p.cls||''}">${p.html||escHtml(p.t)}</span>`).join('');
+  const hero=(o.hero||[]).map(h=>`<div class="h ${h.cls||''}" title="${escHtml(h.tip||'')}"><b>${escHtml(h.v)}</b><span>${escHtml(h.k)}</span></div>`).join('');
+  return `<div class="bc ${o.off?'isoff':(o.state||'')}" style="--acc:${o.acc||'#00e5ff'}" data-tile="${escHtml(o.id)}" title="${escHtml(o.tip||'')}">`
+    +`<div class="top"><div class="nm"><b>${escHtml(o.name)}</b>${o.sub?`<span>${escHtml(o.sub)}</span>`:''}</div>${sw}</div>`
+    +(pills?`<div class="bpills">${pills}</div>`:'')+(o.banner||'')
+    +(hero&&!o.off?`<div class="bhero">${hero}</div>`:'')
+    +(o.meta&&!o.off?`<div class="meta">${o.meta}</div>`:'')
+    +(o.sdPct!=null?`<div class="sdp" title="Bringing in its SD card runs"><i style="width:${o.sdPct}%"></i></div>`:'')+'</div>';
 }
+function boardCard(b,off,sd){
+  const streaming=b.phase==='streaming', isOff=off.has(b.id);
+  const piglet=b.partner&&b.board&&b.board.startsWith('Piglet');
+  const pills=[b.transport==='USB'?{t:'USB',cls:'usb'}:{html:b.rssi!=null?`${sigBars(b.rssi)}${b.rssi} dBm`:'Bluetooth',cls:'ble'}];
+  if(streaming&&ROLE_PILL[b.role]) pills.push(ROLE_PILL[b.role]);
+  if(streaming&&b.channels) pills.push({t:b.channels,cls:'ch'});
+  if(!streaming) pills.push({t:{connecting:'linking…',linked:'starting',offline:'reconnecting…'}[b.phase]||b.phase,cls:b.phase==='offline'?'bad':'warn'});
+  if(b.crashing) pills.push({t:'keeps crashing',cls:'bad'});
+  if(b.foreign) pills.push({t:'not WardriveESP',cls:'bad'});
+  if(b.partner) pills.push({t:piglet?'Piglet':'partner board',cls:'held'});
+  const bt=b.role==='Bluetooth';
+  const hero=[{k:bt?'BT in view':'APs in view',v:fmt(bt?b.bt:b.aps),tip:'Heard in the last 30 s'},
+    {k:'collected ↑',v:fmt((b.got_aps||0)+(b.got_bt||0)),cls:'got',tip:`${fmt(b.got_aps)} Wi-Fi · ${fmt(b.got_bt)} Bluetooth since the app started (SD card runs included)`}];
+  if(b.role==='capture'||b.captures) hero.push({k:'captures',v:fmt(b.captures),cls:'cap',tip:'Handshakes and PMKIDs'});
+  const live=sd&&sd.live&&sd.live.device===b.name?sd.live:null;
+  const meta=[battMeta(b),tempMeta(b.temp),
+    b.gps?metaRow('gps',b.gps_fix?(b.gps_sats?`${b.gps_sats} sats`:'fix'):'no fix',b.gps_fix?'good':'warn'):'',
+    b.sd?metaRow('sd',live?`sending run ${live.index}/${live.count}`:(b.sd_free_mb!=null?(b.sd_free_mb>=1024?(b.sd_free_mb/1024).toFixed(1)+' GB':b.sd_free_mb+' MB')+' free':'ready'),live?'good':'cool'):'',
+    b.sd_taken?metaRow('runs in',fmt(b.sd_taken),'good'):'',
+    b.coproc_mode&&b.coproc_mode!=='off'?metaRow('2nd radio',`${fmt(b.coproc)} ${b.coproc_mode==='btc'?'BT':'APs'}`,'acc'):'',
+    b.uptime!=null?metaRow('up',fmtAge(b.uptime)):'',
+    b.linked_for!=null?metaRow('linked',fmtAge(b.linked_for)):'',
+    metaRow('fw',escHtml(piglet?b.board:(b.fw||'?'))), b.chip?metaRow('chip',chipName(b.chip)):''].join('');
+  return devCard({id:b.id,acc:accFor(b.board,piglet?'piglet':''),name:b.partner&&b.board?b.board:b.name,sub:b.partner?b.name:(b.board||'WardriveESP'),
+    state:streaming&&!b.foreign&&!b.crashing?'':(b.foreign||b.crashing||b.phase==='offline'?'bad':'idle'),
+    off:isOff,sw:true,pills,hero,meta,sdPct:live&&live.total?Math.floor(live.done*100/live.total):null,
+    tip:b.channel_list?'channels '+b.channel_list:''});
+}
+/** A board heard but not linked here: who holds it (like Wardrive Go shows), or free and saving to its card. */
+function awayCard(n,off,espOff){
+  const pills=[{html:`${sigBars(n.rssi)}${n.rssi} dBm`,cls:'ble'}];
+  if(n.linked) pills.push({t:n.usb?'on USB':'linked',cls:'held'});
+  else pills.push({t:n.scanning?'recording':'free',cls:'free'});
+  if(n.scanning&&n.mode) pills.push({t:{wifi:'Wi-Fi',bt:'Bluetooth',cap:'capture',radar:'radar'}[n.mode],cls:{wifi:'wifi',bt:'bt',cap:'cap',radar:'acc'}[n.mode]});
+  if(n.updating) pills.push({t:'updating',cls:'warn'});
+  const banner=n.linked
+    ?`<div class="held">⛓ Held by <b>${escHtml(n.mine?'this PC (another app)':n.holder)}</b>${n.iphone?' · iPhone':''}</div>`
+    :`<div class="held free">● ${n.off_here?'Free · switched off on this PC':(espOff?(n.scanning?'Free · recording to its SD card':'Free · not scanning'):'Free · linking…')}</div>`;
+  const meta=[battMeta(n),tempMeta(n.temp),n.gps?metaRow('gps','yes','good'):'',
+    n.count?metaRow(n.mode==='bt'?'BT last scan':'APs last scan',fmt(n.count),'acc'):'',
+    n.fw?metaRow('fw',escHtml(n.fw)):'',metaRow('heard',n.age<5?'now':`${n.age}s ago`)].join('');
+  return devCard({id:n.id,acc:accFor(n.board),name:n.name,sub:n.board||'WardriveESP',state:'away',off:false,sw:false,pills,banner,meta,
+    tip:n.linked?`Linked to ${n.holder}. It stays theirs; this PC links it when it is free.`:''});
+}
+function otherCard(o,off,sd){
+  const isOff=off.has(o.id)||o.state==='off', live=o.state==='live';
+  const pills=[o.transport==='USB'?{t:`USB ${o.port||''}`.trim(),cls:'usb'}:{t:'Bluetooth',cls:'ble'}];
+  if(!isOff&&o.detail) pills.push({t:o.detail,cls:live?'wifi':'warn'});
+  else if(!isOff&&!live) pills.push({t:o.state,cls:o.state==='failed'?'bad':'warn'});
+  const hero=o.kind==='Flipper Zero'&&!o.aps?[]:[{k:'APs in view',v:fmt(o.aps)}];
+  if(o.transport!=='USB'||o.bt) hero.push({k:'BT in view',v:fmt(o.bt)});
+  hero.push({k:'collected ↑',v:fmt((o.got_aps||0)+(o.got_bt||0)),cls:'got',tip:`${fmt(o.got_aps)} Wi-Fi · ${fmt(o.got_bt)} Bluetooth since the app started (SD card files included)`});
+  const meta=[battMeta(o),tempMeta(o.temp),
+    o.scanner_up!=null?metaRow('scanner',o.scanner_up?'linked':'down',o.scanner_up?'good':'hot'):'',
+    o.chip?metaRow('chip',chipName(o.chip)):'', o.fw?metaRow('fw',escHtml(o.fw)):'', o.serial?metaRow('sn',escHtml(o.serial)):''].join('');
+  const sdl=sd&&sd.live&&sd.live.device===o.name?sd.live:null;
+  return devCard({id:o.id,acc:accFor(o.kind,o.name),name:o.name+(o.tag&&o.kind==='Biscuit'?` ${o.tag}`:''),sub:o.kind||'device',
+    state:live?'':(o.state==='failed'?'bad':'idle'),off:isOff,sw:true,pills,hero,meta,sdPct:sdl&&sdl.total?Math.floor(sdl.done*100/sdl.total):null});
+}
+function renderFleet(w,off){
+  const eb=w.boards||{}, espOff=off.has('esp'), boards=eb.boards||[], sd=eb.sd||{};
+  const others=eb.others||[], bisc=others.filter(o=>o.kind==='Biscuit'), usb=others.filter(o=>o.kind!=='Biscuit');
+  const away=(eb.nearby||[]).filter(n=>!boards.some(b=>b.name===n.name));
+  const linked=boards.filter(b=>b.phase==='streaming'||b.phase==='linked').length+bisc.filter(o=>o.state==='live').length;
+  const inView=boards.reduce((n,b)=>n+(b.role==='Bluetooth'?b.bt:b.aps),0)+bisc.reduce((n,o)=>n+(o.aps||0)+(o.bt||0),0);
+  const got=boards.reduce((n,b)=>n+(b.got_aps||0)+(b.got_bt||0),0)+bisc.reduce((n,o)=>n+(o.got_aps||0)+(o.got_bt||0),0);
+  const held=away.filter(n=>n.linked).length, free=away.length-held;
+  const rec=away.filter(n=>!n.linked&&n.scanning).length;
+  const status=espOff?`Off · ${away.length?`${away.length} board${away.length===1?'':'s'} nearby${rec?`, ${rec} recording to SD`:''}`:'boards keep their runs on their SD cards'}`
+    :`Links every free board over Bluetooth, or USB when plugged in${held?` · ${held} held elsewhere`:''}`;
+  let h=`<div class="fleet${espOff?' isoff':''}"><div class="fhead"><div class="ftitle"><b>WardriveESP bridge</b><span>${escHtml(status)}</span></div>`
+    +`<div class="fsum"><div class="k c"><b>${fmt(linked)}</b><span>linked here</span></div><div class="k"><b>${fmt(away.length)}</b><span>nearby</span></div>`
+    +`<div class="k c"><b>${fmt(inView)}</b><span>in view</span></div><div class="k got"><b>${fmt(got)}</b><span>collected ↑</span></div></div>`
+    +`<div class="master" title="Master switch: every WardriveESP board and Biscuit"><div class="ml"><b>MASTER</b><span>${espOff?'off':'on'}</span></div>`
+    +`<label class="hwsw"><input type="checkbox" data-hw="esp"${espOff?'':' checked'}><span></span></label></div></div>`;
+  if(sd.live){
+    const L=sd.live, pct=L.total?Math.floor(L.done*100/L.total):0, more=(sd.waiting||[]).filter(x=>x!==L.device);
+    h+=`<div class="fsd"><span class="ico">⇩ SD</span>${escHtml(L.device)} · ${escHtml(L.file)}${L.count>1?` · ${L.index} of ${L.count}`:''}<span class="bar"><i style="width:${pct}%"></i></span>${pct}% · ${Math.round(L.bps/1024)} KB/s${more.length?` · then ${escHtml(more.join(', '))}`:''}</div>`;
+  } else if(sd.last) h+=`<div class="fsd"><span class="ico">⇩ SD</span>${escHtml(sd.last)}</div>`;
+  const cards=espOff?[]:[...boards.map(b=>boardCard(b,off,sd)),...bisc.map(o=>otherCard(o,off,sd))];
+  for(const id of off) if(id.startsWith('esp:')&&!boards.some(b=>b.id===id)&&!away.some(n=>n.id===id))
+    cards.push(devCard({id,name:'WardriveESP-'+id.slice(4),sub:'off on this PC',off:true,sw:true}));
+  for(const id of off) if(id.startsWith('bisc:')&&!bisc.some(o=>o.id===id))
+    cards.push(devCard({id,acc:'#ffb300',name:'Biscuit '+id.slice(5).replace(/:/g,'').slice(-4),sub:'off on this PC',off:true,sw:true}));
+  if(cards.length) h+=`<div class="fcards">${cards.join('')}</div>`;
+  if(away.length) h+=`<div class="fsec">Nearby · ${held?`${held} held by another phone or host`:''}${held&&free?' · ':''}${free?`${free} free`:''}</div>`
+    +`<div class="fcards">${away.map(n=>awayCard(n,off,espOff)).join('')}</div>`;
+  if(!cards.length&&!away.length) h+=`<div class="fnote">${espOff?'Turn the master switch on to link boards.':'Power up a WardriveESP board or a Biscuit nearby: it links by itself, no pairing.'}</div>`;
+  h+='</div>';
+  const usbCards=usb.map(o=>otherCard(o,off,sd));
+  for(const id of off) if(id.startsWith('ser:')&&!usb.some(o=>o.id===id))
+    usbCards.push(devCard({id,name:'USB device '+id.slice(4),sub:'off on this PC',off:true,sw:true}));
+  const uv=usb.reduce((n,o)=>n+(o.aps||0),0), ug=usb.reduce((n,o)=>n+(o.got_aps||0)+(o.got_bt||0),0);
+  h+=`<div class="fleet usb"><div class="fhead"><div class="ftitle"><b>USB scanners</b><span>Marauder, GhostESP and Flipper Zero run on their own when plugged in</span></div>`
+    +`<div class="fsum"><div class="k c"><b>${fmt(usb.length)}</b><span>plugged in</span></div><div class="k c"><b>${fmt(uv)}</b><span>in view</span></div>`
+    +`<div class="k got"><b>${fmt(ug)}</b><span>collected ↑</span></div></div></div>`
+    +(usbCards.length?`<div class="fcards">${usbCards.join('')}</div>`:`<div class="fnote">Nothing plugged in yet · plug in a Marauder, GhostESP board or Flipper Zero and it starts by itself.</div>`)+'</div>';
+  if(h!==_fleetSig){ _fleetSig=h; $("#hw-fleet").innerHTML=h; }
+}
+let _fleetSig='';
 function toast(t){const el=$("#toast");el.textContent=t;el.classList.add("show");setTimeout(()=>el.classList.remove("show"),2200);}
 
 function animateNum(el,to){
@@ -2108,72 +2285,7 @@ function renderHardware(s){
         dot:isOff?'':(a.state==='not ready'?'off':'on'),tip:a.name,off:isOff,show:true});
     }
   }
-  const eb=w.boards||{}, espOff=off.has('esp'), boards=eb.boards||[], away=eb.elsewhere||[];
-  const linked=boards.filter(b=>b.phase==='streaming'||b.phase==='linked').length;
-  const holders=[...new Set(away.map(a=>a.holder))].join(', ');
-  tiles.push({id:'esp',n:'WardriveESP boards',d:espOff?'off':(linked?`${linked} linked`:(away.length?`${away.length} nearby · held by ${holders}`:'looking for boards')),
-    dot:espOff?'':(linked?'on':'warn'),tip:away.map(a=>`${a.name}: held by ${a.holder}`).join('\n')||'Links every free board over Bluetooth, or over USB when plugged in',off:espOff,show:true});
-  if(!espOff){
-    for(const b of boards){
-      const streaming=b.phase==='streaming';
-      const sub=[b.transport==='USB'?'USB':'Bluetooth'];
-      if(streaming){ sub.push(b.role); if(b.channels) sub.push(b.channels); }
-      else sub.push({connecting:'linking…',linked:'linked, starting',offline:'reconnecting…'}[b.phase]||b.phase);
-      if(b.linked_for!=null) sub.push(`linked ${fmtAge(b.linked_for)}`);
-      const st=[];
-      st.push(b.role==='Bluetooth'?bstat('BT in view',fmt(b.bt),'','Bluetooth devices heard in the last 30 s')
-                                  :bstat('APs in view',fmt(b.aps),'','Access points heard in the last 30 s'));
-      if(b.coproc_mode&&b.coproc_mode!=='off') st.push(bstat(`2nd radio ${b.coproc_mode==='btc'?'BT':'APs'}`,fmt(b.coproc),'','The co-processor radio, last 90 s'));
-      st.push(...gotStats(b));
-      if(b.role==='capture'||b.captures) st.push(bstat('captures',fmt(b.captures),b.captures?'got':'','Handshakes and PMKIDs from this board'));
-      const bat=battStat(b); if(bat) st.push(bat);
-      const tp=tempStat(b.temp); if(tp) st.push(tp);
-      if(b.rssi!=null) st.push(bstat('signal',`${b.rssi} dBm`,b.rssi<-85?'warn':''));
-      if(b.gps) st.push(bstat(b.gps_fix?'gps fix':'gps',b.gps_fix?(b.gps_sats?`${b.gps_sats} sats`:'fix'):'no fix',b.gps_fix?'':'warn'));
-      if(b.sd) st.push(bstat(b.sd_busy?'sd card':(b.sd_free_mb!=null?'sd free':'sd card'),b.sd_busy?'importing':(b.sd_free_mb!=null?(b.sd_free_mb>=1024?(b.sd_free_mb/1024).toFixed(1)+' GB':b.sd_free_mb+' MB'):'ready'),
-        b.sd_busy?'got':'',`${fmt(b.sd_taken)} offline run${b.sd_taken===1?'':'s'} brought in since the app started`));
-      if(b.sd_taken) st.push(bstat('runs brought in',fmt(b.sd_taken),'got','Offline runs from its SD card since the app started'));
-      if(b.uptime!=null) st.push(bstat('board up',fmtAge(b.uptime)));
-      st.push(bstat('fw',b.partner&&b.board?b.board:(b.fw||'?'),'',b.chip?`${b.chip}${b.bands?` · ${b.bands.includes('5g')?'2.4 + 5 GHz':'2.4 GHz'}`:''}`:''));
-      tiles.push({id:b.id,big:true,n:b.board&&!b.partner?`${b.name} · ${b.board}`:(b.partner&&b.board?`${b.board} · ${b.name}`:b.name),
-        d:b.crashing?'keeps crashing, not relinking':(b.foreign?'not running WardriveESP':sub.join(' · ')),
-        dot:streaming?'on':(b.phase==='offline'||b.foreign||b.crashing?'off':'warn'),stats:st,
-        tip:[b.board,b.chip,b.fw&&('fw '+b.fw),b.channel_list&&('ch '+b.channel_list)].filter(Boolean).join(' · '),off:false,show:true});
-    }
-    for(const id of off) if(id.startsWith('esp:')&&!boards.some(b=>b.id===id))
-      tiles.push({id,n:'WardriveESP-'+id.slice(4),d:'off on this PC',dot:'',tip:'',off:true,show:true});
-  }
-  // Biscuit, Marauder, GhostESP and Flipper Zero: one tile each while it's here.
-  const others=eb.others||[];
-  for(const o of others){
-    const isOff=off.has(o.id)||o.state==='off', live=o.state==='live';
-    const sub=[o.kind||'device',o.transport==='USB'?`USB${o.port?' '+o.port:''}`:'Bluetooth'];
-    if(isOff) sub.push('off');
-    else if(o.detail) sub.push(o.detail);
-    else if(!live) sub.push(o.state);
-    const st=[];
-    if(!isOff){
-      st.push(bstat('APs in view',fmt(o.aps),'','Access points heard in the last 30 s'));
-      if(o.transport!=='USB'||o.bt) st.push(bstat('BT in view',fmt(o.bt),'','Bluetooth devices heard in the last 30 s'));
-      st.push(...gotStats(o));
-      const bat=battStat(o); if(bat) st.push(bat);
-      const tp=tempStat(o.temp); if(tp) st.push(tp);
-      if(o.scanner_up!=null) st.push(bstat('scanner',o.scanner_up?'linked':'down',o.scanner_up?'':'hot','The Biscuit scanner chip (ESP32-C5)'));
-      if(o.chip) st.push(bstat('chip',o.chip));
-      if(o.fw) st.push(bstat('fw',o.fw,'',o.scanner_fw?`scanner ${o.scanner_fw}`:''));
-    }
-    tiles.push({id:o.id,big:true,n:o.name+(o.tag&&o.kind==='Biscuit'?` ${o.tag}`:''),d:sub.join(' · '),stats:st,
-      dot:isOff?'':(live?'on':(o.state==='failed'?'off':'warn')),
-      tip:[o.kind,o.port,o.chip,o.fw&&('fw '+o.fw),o.serial&&('SN '+o.serial)].filter(Boolean).join(' · '),off:isOff,show:true});
-  }
-  for(const id of off) if((id.startsWith('ser:')||id.startsWith('bisc:'))&&!others.some(o=>o.id===id))
-    tiles.push({id,n:id.startsWith('bisc:')?'Biscuit '+id.slice(5).replace(/:/g,'').slice(-4):'USB device '+id.slice(4),d:'off on this PC',dot:'',tip:'',off:true,show:true});
-  const sd=eb.sd||{};
-  if(sd.live){
-    const L=sd.live, pct=L.total?Math.floor(L.done*100/L.total):0;
-    tiles.push({id:'sdimport',n:'SD card import',d:`${L.device} · ${L.count>1?`file ${L.index} of ${L.count} · `:''}${pct}% · ${Math.round(L.bps/1024)} KB/s`,
-      dot:'on',tip:`${L.file}${(sd.waiting||[]).length>1?` · then ${sd.waiting.filter(w=>w!==L.device).join(', ')}`:''}`,off:false,show:true,nosw:true});
-  }
+  renderFleet(w,off);
   const bt=w.bt||{}, bl=w.ble||{}, btOff=off.has('bt');
   tiles.push({id:'bt',n:'Bluetooth',d:btOff?'off':(bt.state==='scanning'?`${fmt(bl.in_view)} in view`:(bt.detail||bt.state||'starting')),
     dot:btOff?'':(bt.state==='scanning'?'on':(bt.state==='unavailable'?'off':'warn')),tip:bt.detail||'',off:btOff,show:true});
@@ -2199,12 +2311,8 @@ function renderHardware(s){
   if(sig!==_hwSig){
     _hwSig=sig;
     const sw=x=>x.nosw?'':`<label class="hwsw" title="Use this hardware"><input type="checkbox" data-hw="${escHtml(x.id)}"${x.off?'':' checked'}><span></span></label>`;
-    $("#hw-dyn").innerHTML=shown.map(x=>x.big
-      ?`<div class="dev big${x.off?' isoff':''}" data-tile="${escHtml(x.id)}" title="${escHtml(x.tip)}"><div class="bhead"><div class="dot ${x.dot}"></div><div class="n">${escHtml(x.n)}</div>${sw(x)}</div>`
-        +`<div class="bsub">${escHtml(x.d)}</div>`
-        +((x.stats||[]).length?`<div class="bstats">${x.stats.map(t=>`<div class="bs ${t.cls}" title="${escHtml(t.tip)}"><b>${escHtml(t.v)}</b><span>${escHtml(t.k)}</span></div>`).join('')}</div>`:'')+'</div>'
-      :`<div class="dev${x.off?' isoff':''}${x.id==='gps:phone'?' clickable':''}" data-tile="${escHtml(x.id)}" title="${escHtml(x.id==='gps:phone'?'Click for the QR code that connects your phone':x.tip)}"><div class="dot ${x.dot}"></div><div><div class="n">${escHtml(x.n)}</div><div class="d">${escHtml(x.d)}</div></div>`
-        +sw(x)+'</div>').join('');
+    $("#hw-dyn").innerHTML=shown.map(x=>`<div class="dev${x.off?' isoff':''}${x.id==='gps:phone'?' clickable':''}" data-tile="${escHtml(x.id)}" title="${escHtml(x.id==='gps:phone'?'Click for the QR code that connects your phone':x.tip)}"><div class="dot ${x.dot}"></div><div><div class="n">${escHtml(x.n)}</div><div class="d">${escHtml(x.d)}</div></div>`
+      +sw(x)+'</div>').join('');
   }
   const stuck=(w.adapters||[]).find(a=>a.monitor&&!off.has(a.id)&&(a.state==='needs replug'||a.state==='needs WinUSB'));
   $("#hw-note").textContent=w.error||(stuck?`${cleanName(stuck.name)}: ${stuck.detail}`:'')||w.reason||'';

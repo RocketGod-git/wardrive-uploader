@@ -434,6 +434,11 @@ def drive_ghost(link: Link, dev: Device, usb_serial: str | None, known_ghost: bo
             heard = banner + info
             if looks_like_wardriveesp(heard):
                 return "esp"
+            if not dev.bridge.enabled:
+                # With the bridge off a WardriveESP board is never asked over its own protocol, and its log
+                # looks like unknown firmware: leave every unidentified board alone until the bridge is back on.
+                log.info("%s: not GhostESP or Marauder; left alone while the WardriveESP bridge is off", dev.port)
+                return "none"
             if not heard.strip():
                 log.info("%s: the board never answered over USB", dev.port)
                 return "none"
@@ -980,6 +985,7 @@ def run(ser, bridge, device: str, vp: tuple, usb_serial: str | None, stop: Calla
     while the bridge is off), "off:<id>" (switched off here) or None (unplugged / done)."""
     oid = device_id(device, usb_serial)
     dev = Device(bridge, oid, device, bridge.sd)
+    bridge_was_on = bridge.enabled
     if dev.off:
         return f"offdev:{oid}"
     link = Link(ser, lambda: stop() or dev.off)
@@ -1000,4 +1006,6 @@ def run(ser, bridge, device: str, vp: tuple, usb_serial: str | None, stop: Calla
         bridge.drop_other(oid)
     if dev.off and result != "gone":
         return f"offdev:{oid}"
+    if result in ("none", "esp") and bridge.enabled and not bridge_was_on:
+        return None         # the bridge came on meanwhile: ask again, it may be a WardriveESP board
     return {"done": None, "gone": None}.get(result, result)

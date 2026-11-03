@@ -168,6 +168,8 @@ class BridgeTest(unittest.TestCase):
         self.br.region = P.Region("ALL")
         self.br.usb.start = lambda: None
         self.br.start()
+        self.br.configure(True, set(), "", set())     # the app applies its settings right after start
+        time.sleep(0.05)
 
     def tearDown(self):
         self.br.stop(1.0)
