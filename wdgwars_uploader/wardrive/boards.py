@@ -18,16 +18,22 @@ readers hand their input over to it.
 from __future__ import annotations
 
 import asyncio
+import base64
 import collections
+import io
 import logging
+import queue
 import threading
 import time
+import zlib
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from . import biscuit as BISC
 from . import esp_proto as P
 from .capture import Hit
 from .gps import Fix
+from .sdimport import RemoteFile, SdImport
 
 log = logging.getLogger("wdgwars.boards")
 
@@ -49,7 +55,9 @@ BYE_FLUSH_S = 0.3
 FALLBACK_IDLE_S = 20.0
 
 # USB serial chips WardriveESP boards use: CP210x, ESP32 native USB, CH340/CH341, CH9102/CH343.
-USB_IDS = {(0x10C4, 0xEA60), (0x303A, 0x1001), (0x1A86, 0x7523), (0x1A86, 0x5523), (0x1A86, 0x55D4), (0x1A86, 0x55D3)}
+USB_IDS = {(0x10C4, 0xEA60), (0x303A, 0x1001), (0x1A86, 0x7523), (0x1A86, 0x5523), (0x1A86, 0x55D4), (0x1A86, 0x55D3),
+           (0x0483, 0x5740)}
+FLIPPER = (0x0483, 0x5740)
 NATIVE_USB = {(0x303A, 0x1001)}
 
 CONNECTING, LINKED, STREAMING, OFFLINE = "connecting", "linked", "streaming", "offline"
@@ -85,6 +93,14 @@ class BoardInfo:
     battery: int | None = None
     coproc_mode: str | None = None
     coproc_state: str | None = None
+    partner: bool = False
+    temp_c: int | None = None
+    batt_mv: int | None = None
+    batt_rate: float | None = None
+    uptime_s: int | None = None
+    sd_free_mb: int | None = None
+    gps_sats: int | None = None
+    gps_at: float = 0.0
 
     @property
     def dual_band(self) -> bool:
@@ -328,6 +344,165 @@ class _Session:
         self.sent_plan: list[int] | None = None
         self.want_plan: list[int] | None = None
         self.want_all = False
+        self.sd_card = False
+        self.clock_sent = False
+        self.sd_src: "BoardSdSource | None" = None
+
+
+class BoardSdSource:
+    """A WardriveESP board's offline runs on its microSD card, over whichever link the
+    bridge holds it on. `sd list` names the closed runs, `sd read <name> <off> <len>`
+    returns one base64 chunk with its CRC-32 (up to 4 asked at once, a damaged or
+    missing one asked again), and `sd del` goes out once the run is imported: the
+    board never deletes on its own. Runs on the import's own thread; commands go out
+    on the bridge thread, and the bridge puts every `WD:SD` line of this link in
+    ``lines``."""
+
+    CHUNK = 640
+    INFLIGHT = 4
+    CHUNK_TIMEOUT_S = 5.0
+    TRIES = 6
+    DIR = "/runs/"
+    next_time = "next link"
+
+    def __init__(self, device_key: str, device_label: str, post: Callable[[str], None]) -> None:
+        self.device_key = device_key
+        self.device_label = device_label
+        self._post = post
+        self.linked = True
+        self.lines: queue.Queue[str] = queue.Queue()
+        self.count_as: str | None = None
+
+    def _send(self, command: str) -> bool:
+        if self.linked:
+            self._post(command)
+        return self.linked
+
+    def _clear(self) -> None:
+        while True:
+            try:
+                self.lines.get_nowait()
+            except queue.Empty:
+                return
+
+    def _next(self, timeout: float) -> str | None:
+        try:
+            return self.lines.get(timeout=timeout)
+        except queue.Empty:
+            return None
+
+    @staticmethod
+    def _kv(line: str) -> dict[str, str]:
+        return P.key_values(line, "WD:SD")
+
+    def list(self) -> list[RemoteFile]:
+        self._clear()
+        if not self._send("sd list"):
+            return []
+        out: list[RemoteFile] = []
+        end = time.monotonic() + 10
+        while self.linked and time.monotonic() < end:
+            line = self._next(0.25)
+            if line is None:
+                continue
+            if line.startswith("WD:SD file "):
+                k = self._kv(line)
+                try:
+                    size = int(k.get("size", ""))
+                except ValueError:
+                    continue
+                if not k.get("name") or k.get("open") == "1" or size <= 0:
+                    continue        # still being written, or empty
+                out.append(RemoteFile(self.DIR + k["name"], size))
+            elif line.startswith("WD:SD list "):
+                break
+            elif line.startswith("WD:SD err"):
+                log.info("%s SD: %s", self.device_label, line)
+                return []
+        log.info("%s SD: %d offline run(s) %s", self.device_label, len(out),
+                 " ".join(f"{f.name}({f.size} B)" for f in out[:12]))
+        return out
+
+    def head(self, f: RemoteFile, n: int) -> bytes | None:
+        return None         # checked during the transfer (each run starts with the board's own WiGLE line)
+
+    def read(self, f: RemoteFile, out: io.BufferedIOBase, on_bytes: Callable[[int], None]) -> int:
+        self._clear()
+        ready: dict[int, bytes] = {}
+        asked: dict[int, float] = {}
+        tries: dict[int, int] = {}
+        have = nxt = 0
+        on_bytes(0)
+
+        def retry(off: int, why: str) -> None:
+            tries[off] = tries.get(off, 0) + 1
+            if tries[off] > self.TRIES:
+                raise OSError(f"{f.name}: chunk at {off} {why} {tries[off]} times")
+            if not self._send(f"sd read {f.name} {off} {self.CHUNK}"):
+                raise OSError("link gone")
+            asked[off] = time.monotonic()
+
+        while have < f.size:
+            if not self.linked:
+                raise OSError(f"link gone at {have} of {f.size} bytes")
+            while len(asked) < self.INFLIGHT and nxt < f.size:
+                if not self._send(f"sd read {f.name} {nxt} {self.CHUNK}"):
+                    raise OSError("link gone")
+                asked[nxt] = time.monotonic()
+                nxt += self.CHUNK
+            line = self._next(0.25)
+            if line and line.startswith("WD:SD data "):
+                k = self._kv(line)
+                try:
+                    off = int(k.get("off", ""))
+                except ValueError:
+                    off = -1
+                if k.get("name") == f.name and asked.pop(off, None) is not None:
+                    try:
+                        b = base64.b64decode(k.get("b64", ""))
+                    except ValueError:
+                        b = None
+                    want = min(self.CHUNK, f.size - off)
+                    try:
+                        crc_ok = b is not None and int(k.get("crc", ""), 16) == zlib.crc32(b)
+                    except ValueError:
+                        crc_ok = False
+                    if b is not None and len(b) == want and crc_ok:
+                        ready[off] = b
+                    else:
+                        retry(off, "damaged")
+            elif line and line.startswith("WD:SD err"):
+                raise OSError(line[6:])
+            now = time.monotonic()
+            for off, at in list(asked.items()):
+                if now - at > self.CHUNK_TIMEOUT_S:
+                    del asked[off]
+                    retry(off, "no answer")
+            while have in ready:
+                b = ready.pop(have)
+                out.write(b)
+                have += len(b)
+            on_bytes(have)
+        return have
+
+    def taken(self, f: RemoteFile) -> bool:
+        """The run is imported: the board may delete it now. False = still on the card
+        (no answer, or a refusal other than no_file); asked again on the next link."""
+        self._clear()
+        if not self._send(f"sd del {f.name}"):
+            return False
+        end = time.monotonic() + 6
+        while self.linked and time.monotonic() < end:
+            line = self._next(0.25)
+            if line and line.startswith("WD:SD del "):
+                k = self._kv(line)
+                if k.get("name") not in (None, f.name):
+                    continue
+                log.info("%s SD: %s", self.device_label, line)
+                return k.get("ok") == "1" or k.get("reason") == "no_file"
+        log.info("%s SD: no answer to sd del %s (it stays on the card, deleted on the next link)",
+                 self.device_label, f.name)
+        return False
 
 
 @dataclass
@@ -342,6 +517,7 @@ class _Beacon:
     usb: bool = False
     fw: str | None = None
     link_end: int = 0
+    temp_c: int | None = None
 
 
 class _HeldElsewhere:
@@ -391,10 +567,12 @@ class BoardBridge(_Listener):
         self._published: list[dict[str, Any]] = []
         self._nearby: list[dict[str, Any]] = []
         self.usb = UsbBoards(self)
+        self.biscuits = BISC.Biscuits(self)
         self.region = P.Region.for_country(windows_country())
         # settings, set from any thread through configure()
         self.enabled = True
         self.off: set[str] = set()
+        self.off_other: set[str] = set()     # other devices switched off ("ser:..." / "bisc:...")
         self.nickname = ""
         # bridge-thread state
         self.sessions: dict[str, _Session] = {}
@@ -428,6 +606,13 @@ class BoardBridge(_Listener):
         self.stopping = False
         self._dirty = True
         self._tick = 0
+        self.sd: SdImport | None = None
+        self.started_at = time.time()
+        # Unique APs / Bluetooth devices each board or device sent since the app started, by board key or device id.
+        self.collected: dict[str, tuple[set[str], set[str]]] = {}
+        self.sd_taken: dict[str, int] = {}     # board key -> offline runs imported since the app started
+        # Other devices (Biscuit, Marauder, GhostESP, Flipper), keyed by their hardware id.
+        self._others: dict[str, dict[str, Any]] = {}
 
     # ---- lifecycle (any thread) -------------------------------------------
     def start(self) -> None:
@@ -453,10 +638,12 @@ class BoardBridge(_Listener):
         ready.wait(5)
         self._log(f"bridge on, looking for WardriveESP boards (channel region {self.region.name})")
         self.usb.start()
+        self.biscuits.start()
 
     def stop(self, wait: float = 3.0) -> None:
         """Let every board go (`bye` first, so another host links it at once) and stop."""
         self.usb.stop()
+        self.biscuits.stop()
         if not self.loop or not self._thread:
             return
         done = threading.Event()
@@ -537,6 +724,13 @@ class BoardBridge(_Listener):
     def _advert(self, device: Any, adv: Any) -> None:
         uuids = [u.lower() for u in (adv.service_uuids or [])]
         name = adv.local_name
+        if BISC.is_biscuit(name, uuids):
+            bid = "B:" + str(device.address).upper()
+            now = _now()
+            if now - self.advert_posted.get(bid, 0.0) >= 1.0:
+                self.advert_posted[bid] = now
+                self.biscuits.on_advert(device, adv)
+            return
         if P.SERVICE not in uuids and P.STATUS not in uuids and not P.is_board_name(name):
             return
         bid = str(device.address).upper()
@@ -721,6 +915,8 @@ class BoardBridge(_Listener):
         s = self.sessions.pop(sid, None)
         if s is None:
             return
+        if s.sd_src is not None:
+            s.sd_src.linked = False
         if note:
             self._log(f"{s.info.name}: {note}")
         self._setup_done(sid)
@@ -927,7 +1123,8 @@ class BoardBridge(_Listener):
             name = (adv_name if not status and P.is_board_name(adv_name) else None) \
                 or (prev.name if prev and P.board_suffix(prev.name) == P.board_suffix(b.name) else None) or b.name
             nxt = _Beacon(bid, name, rssi, now, status or b.linked, holder=b.holder if (status or b.linked) else "",
-                          holder_iphone=b.holder_iphone, usb=b.usb, fw=b.fw, link_end=prev.link_end if prev else 0)
+                          holder_iphone=b.holder_iphone, usb=b.usb, fw=b.fw, link_end=prev.link_end if prev else 0,
+                          temp_c=b.temp_c)
         elif status:
             if prev is None:
                 return
@@ -1250,6 +1447,18 @@ class BoardBridge(_Listener):
     _DATA = ("WD:AP ", "WD:BT ", "WD:STATUS", "WD:CLIENT ", "WD:HS ", "WD:PMKID ", "WD:GPS ")
 
     def _parse_line(self, s: _Session, line: str) -> None:
+        if line.startswith("WD:SD "):
+            # Offline runs: replies for the import taking them; file chunks stay out of the log.
+            if s.sd_src is not None:
+                s.sd_src.lines.put(line)
+            if not line.startswith("WD:SD data "):
+                log.info("WardriveESP: [%s] %s", s.info.tag, line[:160])
+            return
+        if line.startswith("WD:RUNS "):
+            n = int(P.key_values(line, "WD:RUNS").get("n", "0") or 0)
+            if n > 0:
+                self._take_runs(s, n)
+            return
         if "comm link down" in line.lower():
             self._mark_foreign(s)
         now = _now()
@@ -1267,6 +1476,7 @@ class BoardBridge(_Listener):
             if ap is None:
                 return
             (s.heard_cp if ap.coproc else s.heard)[ap.bssid] = now
+            self._collected(s.info.key)[0].add(ap.bssid)
             self._note_ap(ap, s.info.name)
             return
         if line.startswith("WD:BT "):
@@ -1274,6 +1484,7 @@ class BoardBridge(_Listener):
             if bt is None:
                 return
             (s.heard_cp if bt.coproc else s.heard_bt)[bt.mac] = now
+            self._collected(s.info.key)[1].add(bt.mac)
             self._note_bt(bt, s.info.name)
             return
         if line.startswith("WD:GPS "):
@@ -1283,6 +1494,7 @@ class BoardBridge(_Listener):
             if not s.info.gps_capable:
                 s.info.gps_capable = True
                 self._dirty = True
+            s.info.gps_sats, s.info.gps_at = g.sats, now
             self.gps.fix = Fix(g.lat, g.lon, g.alt, 10.0, None, None, g.sats, time.time(), now, f"{s.info.name} GPS")
             self.gps.present = True
             self.gps.state, self.gps.detail = "fix", s.info.name
@@ -1326,6 +1538,19 @@ class BoardBridge(_Listener):
             return
         if line.startswith("WD:HEALTH "):
             kv = P.key_values(line, "WD:HEALTH")
+            self._note_temp(s, kv)
+            try:
+                s.info.uptime_s = int(kv["up"])
+            except (KeyError, ValueError):
+                pass
+            try:
+                s.info.batt_mv = int(kv["batt_mv"])
+            except (KeyError, ValueError):
+                pass
+            try:
+                s.info.batt_rate = float(kv["batt_rate"])
+            except (KeyError, ValueError):
+                pass
             try:
                 pct = max(0, min(100, int(kv["batt"])))
             except (KeyError, ValueError):
@@ -1342,8 +1567,18 @@ class BoardBridge(_Listener):
             i.bt_capable, i.gps_capable, i.cap_capable = kv.get("bt") == "1", kv.get("gps") == "1", kv.get("cap") == "1"
             i.supported = P.channel_list(kv.get("chans"))
             i.legacy = False
-            i.board_name = (kv.get("board_name") or "").replace("_", " ").strip() or None
+            i.partner = P.is_partner_board(kv)
+            i.board_name = (P.partner_name(kv) if i.partner else None) or                 (kv.get("board_name") or "").replace("_", " ").strip() or None
             i.has_battery = kv.get("batt") == "1"
+            s.sd_card = kv.get("sd") == "1"
+            try:
+                i.sd_free_mb = int(kv["sd_free_mb"]) if s.sd_card else None
+            except (KeyError, ValueError):
+                i.sd_free_mb = None
+            if s.sd_card and not s.clock_sent and s.ready:
+                # Rows a board saves before its GPS sets the clock count from 1970.
+                s.clock_sent = True
+                self._send(s, f"time {int(time.time())}")
             i.coproc_mode = kv.get("coproc") if kv.get("coproc") in P.COPROC_MODES else None
             if i.coproc_mode is None:
                 s.heard_cp.clear()
@@ -1368,8 +1603,96 @@ class BoardBridge(_Listener):
             self._dirty = True
         elif line.startswith("WD:BOOT "):
             self._check_crash_loop(s, line)
+        elif line.startswith("WD:STATUS") and "temp=" in line:
+            self._note_temp(s, P.key_values(line, "WD:STATUS"))
         elif line.startswith("WD:") and not line.startswith(("WD:STATUS", "WD:HEALTH")):
             self._log(f"[{s.info.tag}] {line[:200]}")
+
+    def _take_runs(self, s: _Session, n: int) -> None:
+        """A board linked with offline runs on its card: list them, copy each one and
+        import it as its own run for the next upload, then let the board delete it. Runs
+        on its own thread while the scan keeps streaming; one device copies at a time."""
+        if s.sd_src is not None or not s.ready or self.sd is None:
+            return
+        sid, sd = s.t.id, self.sd
+
+        def post(command: str) -> None:
+            def send() -> None:
+                if self.sessions.get(sid) is s and s.ready:
+                    s.t.send(command)
+            self.post(send)
+        src = BoardSdSource("wdesp:" + s.info.name.lower(), s.info.name, post)
+        src.count_as = s.info.key
+        s.sd_src = src
+        self._log(f"{s.info.name}: {n} offline run{'s' if n != 1 else ''} on its card")
+
+        def stop() -> bool:
+            return not src.linked
+
+        def run() -> None:
+            try:
+                files = sd.find_new(src, stop)
+                if files:
+                    sd.offer(src, files)
+                    while src.linked and not sd.try_transfer(src, files, stop):
+                        time.sleep(0.5)
+                    key = s.info.key
+                    self.post(lambda: self.sd_taken.__setitem__(key, self.sd_taken.get(key, 0) + len(files)))
+            except Exception as e:  # noqa: BLE001
+                log.info("%s SD: %s", src.device_label, e)
+            finally:
+                sd.withdraw(src)
+
+                def done() -> None:
+                    if s.sd_src is src:
+                        s.sd_src = None
+                self.post(done)
+        threading.Thread(target=run, name=f"sd-{s.info.tag}", daemon=True).start()
+
+    # ---- other devices (Biscuit, Marauder, GhostESP, Flipper) -----------------
+    def feed_ap(self, bssid: str, ssid: str, rssi: int, channel: int | None, caps: str | None, source: str,
+                oid: str | None = None) -> None:
+        """An access point another device heard, merged with the boards' own."""
+        if oid:
+            with self._lock:
+                self._collected(oid)[0].add(bssid.lower())
+        self._note_ap(P.Ap(bssid.lower(), ssid or "", rssi, channel or 0, caps or "", not ssid), source)
+
+    def feed_bt(self, mac: str, name: str, rssi: int, source: str, oid: str | None = None) -> None:
+        if oid:
+            with self._lock:
+                self._collected(oid)[1].add(mac.upper())
+        self._note_bt(P.Bt(mac.upper(), False, name or "", None, rssi, False), source)
+
+    def count_collected(self, key: str, rows: list[dict[str, Any]]) -> None:
+        """Networks a device's SD card brought in count as collected by that device."""
+        with self._lock:
+            c = self._collected(key)
+            for r in rows:
+                (c[0] if r.get("type", "WIFI") == "WIFI" else c[1]).add(r["mac"])
+
+    def set_other(self, oid: str, **fields: Any) -> None:
+        with self._lock:
+            self._others.setdefault(oid, {"id": oid}).update(fields)
+
+    def drop_other(self, oid: str) -> None:
+        with self._lock:
+            self._others.pop(oid, None)
+
+    def _collected(self, key: str) -> tuple[set[str], set[str]]:
+        c = self.collected.get(key)
+        if c is None:
+            c = self.collected[key] = (set(), set())
+        return c
+
+    def _note_temp(self, s: _Session, kv: dict[str, str]) -> None:
+        try:
+            t = round(float(kv["temp"]))
+        except (KeyError, ValueError):
+            return
+        if -60 < t < 150 and s.info.temp_c != t:
+            s.info.temp_c = t
+            self._dirty = True
 
     def _announce(self, s: _Session) -> None:
         """One activity line per board per run, once its name and details are known."""
@@ -1485,6 +1808,15 @@ class BoardBridge(_Listener):
                 "coproc": sum(1 for t in s.heard_cp.values() if now - t < HEARD_CP_S),
                 "captures": i.captures, "battery": i.battery, "gps": i.gps_capable, "foreign": i.foreign,
                 "crashing": i.id in self.crash_looping,
+                "got_aps": len(self.collected.get(i.key, ((), ()))[0]), "got_bt": len(self.collected.get(i.key, ((), ()))[1]),
+                "temp": i.temp_c if i.temp_c is not None else (self.beacons[i.id].temp_c if i.id in self.beacons else None),
+                "batt_mv": i.batt_mv, "batt_rate": i.batt_rate, "uptime": i.uptime_s,
+                "rssi": self.beacons[i.id].rssi if i.transport != "USB" and i.id in self.beacons else None,
+                "linked_for": int(now - s.since) if i.phase in (LINKED, STREAMING) else None,
+                "sd": s.sd_card, "sd_free_mb": i.sd_free_mb, "sd_taken": self.sd_taken.get(i.key, 0),
+                "sd_busy": s.sd_src is not None,
+                "gps_fix": bool(i.gps_at and now - i.gps_at < 10), "gps_sats": i.gps_sats,
+                "partner": i.partner, "bands": i.bands, "coproc_mode": i.coproc_mode,
             })
         out.sort(key=lambda b: b["name"])
         here = {P.board_suffix(b["name"]) for b in out}
@@ -1498,8 +1830,14 @@ class BoardBridge(_Listener):
 
     def status(self) -> dict[str, Any]:
         with self._lock:
+            others = []
+            for v in self._others.values():
+                c = self.collected.get(v["id"])
+                others.append(dict(v, got_aps=len(c[0]) if c else 0, got_bt=len(c[1]) if c else 0))
+            others.sort(key=lambda d: d.get("name", ""))
             return {"enabled": self.enabled, "boards": list(self._published), "elsewhere": list(self._nearby),
-                    "region": self.region.name}
+                    "region": self.region.name, "others": others,
+                    "sd": self.sd.status() if self.sd else None}
 
 
 class UsbBoards:
@@ -1556,7 +1894,9 @@ class UsbBoards:
                             st = None
                         if st and st.startswith("off:") and st[4:] not in self.bridge.off:
                             st = None
-                        if st is not None or not enabled:
+                        if st and st.startswith("offdev:") and st[7:] not in self.bridge.off_other:
+                            st = None
+                        if st is not None:
                             continue
                         self._ports[key] = "probing"
                         threading.Thread(target=self._port, args=(p.device, vp, key), name=f"wardriveesp-{p.device}",
@@ -1578,7 +1918,7 @@ class UsbBoards:
         import serial
         ser = serial.Serial()
         ser.port, ser.baudrate, ser.timeout, ser.write_timeout = device, 115200, 0.15, 2
-        ser.dtr = vp in NATIVE_USB          # a UART bridge keeps DTR (GPIO0) released
+        ser.dtr = vp in NATIVE_USB or vp == FLIPPER    # a UART bridge keeps DTR (GPIO0) released; the Flipper CLI starts on DTR
         ser.rts = False
         try:
             ser.open()
@@ -1588,9 +1928,15 @@ class UsbBoards:
             return
         state: str | None = "none"
         try:
-            board = self._probe(ser)
+            # With the bridge off a WardriveESP board is never asked: it keeps saving offline runs.
+            board = self._probe(ser) if self.bridge.enabled and vp != FLIPPER else None
             if board is None:
-                log.info("WardriveESP USB: %s (%04x:%04x) did not answer as a WardriveESP board", device, *vp)
+                if self.bridge.enabled and vp != FLIPPER:
+                    log.info("WardriveESP USB: %s (%04x:%04x) did not answer as a WardriveESP board", device, *vp)
+                # Marauder, GhostESP, a Flipper Zero, or unknown firmware.
+                from . import serialdev
+                self._set(key, "board")
+                state = serialdev.run(ser, self.bridge, device, vp, key[2], self._stop.is_set)
                 return
             log.info("WardriveESP USB: found WardriveESP %s on %s (chip=%s name=%s)", board.get("fw"), device,
                      board.get("chip"), board.get("name"))

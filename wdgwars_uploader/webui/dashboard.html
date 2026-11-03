@@ -114,6 +114,18 @@ h1{font-size:20px;letter-spacing:3px;margin:0;font-weight:700;
 .dev>div:nth-child(2){min-width:0;flex:1}
 .dev .n{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dev.isoff{opacity:.55}
+.dev.big{grid-column:span 2;flex-direction:column;align-items:stretch;gap:8px;padding:12px 14px}
+@media(max-width:600px){.dev.big{grid-column:span 1}}
+.dev.big .bhead{display:flex;gap:10px;align-items:center;min-width:0}
+.dev.big .bhead .n{flex:1;min-width:0;font-size:14px}
+.dev.big .bsub{font-size:11px;color:var(--muted);overflow-wrap:anywhere}
+.dev.big>div:nth-child(2){flex:none}
+.bstats{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:6px}
+.bs{background:#070c12;border:1px solid var(--line);border-radius:6px;padding:6px 8px;min-width:0}
+.bs b{display:block;font-size:15px;color:#dfe;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+.bs span{display:block;font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bs.got{border-color:#11463a}.bs.got b{color:var(--green)}
+.bs.warn b{color:var(--amber)}.bs.hot b{color:var(--red)}
 .counter.clickable{cursor:pointer} .counter.clickable:hover{border-color:var(--amber)}
 .keytbl{width:100%;border-collapse:collapse;font-size:12px}
 .keytbl th{text-align:left;font-size:9px;letter-spacing:1px;color:var(--muted);text-transform:uppercase;padding:5px 6px;border-bottom:1px solid var(--line)}
@@ -843,6 +855,21 @@ let dirtyKey = false, _prevNewA = null, _prevNewM = null;
 
 function fmtDur(s){s=Math.max(0,Math.floor(s));const h=Math.floor(s/3600),m=Math.floor(s%3600/60),ss=s%60;
   return h?`${h}h ${m}m`:(m?`${m}m ${ss}s`:`${ss}s`);}
+/** "12m", "3h 05m": a link or board age that only changes once a minute. */
+function fmtAge(s){s=Math.max(0,Math.floor(s/60));return s<60?`${s}m`:`${Math.floor(s/60)}h ${String(s%60).padStart(2,'0')}m`;}
+/** One stat box on a device card. */
+function bstat(k,v,cls,tip){return {k,v,cls:cls||'',tip:tip||''};}
+function battStat(o){
+  if(o.battery==null) return null;
+  const extra=[o.batt_mv?`${(o.batt_mv/1000).toFixed(2)} V`:'',o.batt_rate!=null?`${o.batt_rate>0?'+':''}${o.batt_rate.toFixed(1)}%/h`:''].filter(Boolean).join(' · ');
+  return bstat('battery',`${o.battery}%`,o.battery<=15?'hot':(o.battery<=30?'warn':''),extra);
+}
+function tempStat(t){return t==null?null:bstat('temp',`${t} °C`,t>=75?'hot':(t>=60?'warn':''));}
+function gotStats(o){
+  const out=[bstat('Wi-Fi collected ↑',fmt(o.got_aps),'got','Unique networks this device sent since the app started (SD card runs included)')];
+  if(o.got_bt) out.push(bstat('BT collected ↑',fmt(o.got_bt),'got','Unique Bluetooth devices this device sent since the app started'));
+  return out;
+}
 function toast(t){const el=$("#toast");el.textContent=t;el.classList.add("show");setTimeout(()=>el.classList.remove("show"),2200);}
 
 function animateNum(el,to){
@@ -2088,20 +2115,64 @@ function renderHardware(s){
     dot:espOff?'':(linked?'on':'warn'),tip:away.map(a=>`${a.name}: held by ${a.holder}`).join('\n')||'Links every free board over Bluetooth, or over USB when plugged in',off:espOff,show:true});
   if(!espOff){
     for(const b of boards){
-      const parts=[b.transport==='USB'?'USB':'Bluetooth'];
-      if(b.phase==='streaming'){
-        parts.push(b.role); if(b.channels) parts.push(b.channels);
-        parts.push(b.role==='Bluetooth'?`${fmt(b.bt)} devices`:`${fmt(b.aps)} APs`);
-        if(b.captures) parts.push(`${fmt(b.captures)} captures`);
-      } else parts.push({connecting:'linking…',linked:'linked, starting',offline:'reconnecting…'}[b.phase]||b.phase);
-      if(b.battery!=null) parts.push(`${b.battery}%`);
-      tiles.push({id:b.id,n:b.board?`${b.name} · ${b.board}`:b.name,
-        d:b.crashing?'keeps crashing, not relinking':(b.foreign?'not running WardriveESP':parts.join(' · ')),
-        dot:b.phase==='streaming'?'on':(b.phase==='offline'||b.foreign||b.crashing?'off':'warn'),
+      const streaming=b.phase==='streaming';
+      const sub=[b.transport==='USB'?'USB':'Bluetooth'];
+      if(streaming){ sub.push(b.role); if(b.channels) sub.push(b.channels); }
+      else sub.push({connecting:'linking…',linked:'linked, starting',offline:'reconnecting…'}[b.phase]||b.phase);
+      if(b.linked_for!=null) sub.push(`linked ${fmtAge(b.linked_for)}`);
+      const st=[];
+      st.push(b.role==='Bluetooth'?bstat('BT in view',fmt(b.bt),'','Bluetooth devices heard in the last 30 s')
+                                  :bstat('APs in view',fmt(b.aps),'','Access points heard in the last 30 s'));
+      if(b.coproc_mode&&b.coproc_mode!=='off') st.push(bstat(`2nd radio ${b.coproc_mode==='btc'?'BT':'APs'}`,fmt(b.coproc),'','The co-processor radio, last 90 s'));
+      st.push(...gotStats(b));
+      if(b.role==='capture'||b.captures) st.push(bstat('captures',fmt(b.captures),b.captures?'got':'','Handshakes and PMKIDs from this board'));
+      const bat=battStat(b); if(bat) st.push(bat);
+      const tp=tempStat(b.temp); if(tp) st.push(tp);
+      if(b.rssi!=null) st.push(bstat('signal',`${b.rssi} dBm`,b.rssi<-85?'warn':''));
+      if(b.gps) st.push(bstat(b.gps_fix?'gps fix':'gps',b.gps_fix?(b.gps_sats?`${b.gps_sats} sats`:'fix'):'no fix',b.gps_fix?'':'warn'));
+      if(b.sd) st.push(bstat(b.sd_busy?'sd card':(b.sd_free_mb!=null?'sd free':'sd card'),b.sd_busy?'importing':(b.sd_free_mb!=null?(b.sd_free_mb>=1024?(b.sd_free_mb/1024).toFixed(1)+' GB':b.sd_free_mb+' MB'):'ready'),
+        b.sd_busy?'got':'',`${fmt(b.sd_taken)} offline run${b.sd_taken===1?'':'s'} brought in since the app started`));
+      if(b.sd_taken) st.push(bstat('runs brought in',fmt(b.sd_taken),'got','Offline runs from its SD card since the app started'));
+      if(b.uptime!=null) st.push(bstat('board up',fmtAge(b.uptime)));
+      st.push(bstat('fw',b.partner&&b.board?b.board:(b.fw||'?'),'',b.chip?`${b.chip}${b.bands?` · ${b.bands.includes('5g')?'2.4 + 5 GHz':'2.4 GHz'}`:''}`:''));
+      tiles.push({id:b.id,big:true,n:b.board&&!b.partner?`${b.name} · ${b.board}`:(b.partner&&b.board?`${b.board} · ${b.name}`:b.name),
+        d:b.crashing?'keeps crashing, not relinking':(b.foreign?'not running WardriveESP':sub.join(' · ')),
+        dot:streaming?'on':(b.phase==='offline'||b.foreign||b.crashing?'off':'warn'),stats:st,
         tip:[b.board,b.chip,b.fw&&('fw '+b.fw),b.channel_list&&('ch '+b.channel_list)].filter(Boolean).join(' · '),off:false,show:true});
     }
     for(const id of off) if(id.startsWith('esp:')&&!boards.some(b=>b.id===id))
       tiles.push({id,n:'WardriveESP-'+id.slice(4),d:'off on this PC',dot:'',tip:'',off:true,show:true});
+  }
+  // Biscuit, Marauder, GhostESP and Flipper Zero: one tile each while it's here.
+  const others=eb.others||[];
+  for(const o of others){
+    const isOff=off.has(o.id)||o.state==='off', live=o.state==='live';
+    const sub=[o.kind||'device',o.transport==='USB'?`USB${o.port?' '+o.port:''}`:'Bluetooth'];
+    if(isOff) sub.push('off');
+    else if(o.detail) sub.push(o.detail);
+    else if(!live) sub.push(o.state);
+    const st=[];
+    if(!isOff){
+      st.push(bstat('APs in view',fmt(o.aps),'','Access points heard in the last 30 s'));
+      if(o.transport!=='USB'||o.bt) st.push(bstat('BT in view',fmt(o.bt),'','Bluetooth devices heard in the last 30 s'));
+      st.push(...gotStats(o));
+      const bat=battStat(o); if(bat) st.push(bat);
+      const tp=tempStat(o.temp); if(tp) st.push(tp);
+      if(o.scanner_up!=null) st.push(bstat('scanner',o.scanner_up?'linked':'down',o.scanner_up?'':'hot','The Biscuit scanner chip (ESP32-C5)'));
+      if(o.chip) st.push(bstat('chip',o.chip));
+      if(o.fw) st.push(bstat('fw',o.fw,'',o.scanner_fw?`scanner ${o.scanner_fw}`:''));
+    }
+    tiles.push({id:o.id,big:true,n:o.name+(o.tag&&o.kind==='Biscuit'?` ${o.tag}`:''),d:sub.join(' · '),stats:st,
+      dot:isOff?'':(live?'on':(o.state==='failed'?'off':'warn')),
+      tip:[o.kind,o.port,o.chip,o.fw&&('fw '+o.fw),o.serial&&('SN '+o.serial)].filter(Boolean).join(' · '),off:isOff,show:true});
+  }
+  for(const id of off) if((id.startsWith('ser:')||id.startsWith('bisc:'))&&!others.some(o=>o.id===id))
+    tiles.push({id,n:id.startsWith('bisc:')?'Biscuit '+id.slice(5).replace(/:/g,'').slice(-4):'USB device '+id.slice(4),d:'off on this PC',dot:'',tip:'',off:true,show:true});
+  const sd=eb.sd||{};
+  if(sd.live){
+    const L=sd.live, pct=L.total?Math.floor(L.done*100/L.total):0;
+    tiles.push({id:'sdimport',n:'SD card import',d:`${L.device} · ${L.count>1?`file ${L.index} of ${L.count} · `:''}${pct}% · ${Math.round(L.bps/1024)} KB/s`,
+      dot:'on',tip:`${L.file}${(sd.waiting||[]).length>1?` · then ${sd.waiting.filter(w=>w!==L.device).join(', ')}`:''}`,off:false,show:true,nosw:true});
   }
   const bt=w.bt||{}, bl=w.ble||{}, btOff=off.has('bt');
   tiles.push({id:'bt',n:'Bluetooth',d:btOff?'off':(bt.state==='scanning'?`${fmt(bl.in_view)} in view`:(bt.detail||bt.state||'starting')),
@@ -2127,8 +2198,13 @@ function renderHardware(s){
   const sig=JSON.stringify(shown);
   if(sig!==_hwSig){
     _hwSig=sig;
-    $("#hw-dyn").innerHTML=shown.map(x=>`<div class="dev${x.off?' isoff':''}${x.id==='gps:phone'?' clickable':''}" data-tile="${escHtml(x.id)}" title="${escHtml(x.id==='gps:phone'?'Click for the QR code that connects your phone':x.tip)}"><div class="dot ${x.dot}"></div><div><div class="n">${escHtml(x.n)}</div><div class="d">${escHtml(x.d)}</div></div>`
-      +(x.nosw?'':`<label class="hwsw" title="Use this hardware"><input type="checkbox" data-hw="${escHtml(x.id)}"${x.off?'':' checked'}><span></span></label>`)+'</div>').join('');
+    const sw=x=>x.nosw?'':`<label class="hwsw" title="Use this hardware"><input type="checkbox" data-hw="${escHtml(x.id)}"${x.off?'':' checked'}><span></span></label>`;
+    $("#hw-dyn").innerHTML=shown.map(x=>x.big
+      ?`<div class="dev big${x.off?' isoff':''}" data-tile="${escHtml(x.id)}" title="${escHtml(x.tip)}"><div class="bhead"><div class="dot ${x.dot}"></div><div class="n">${escHtml(x.n)}</div>${sw(x)}</div>`
+        +`<div class="bsub">${escHtml(x.d)}</div>`
+        +((x.stats||[]).length?`<div class="bstats">${x.stats.map(t=>`<div class="bs ${t.cls}" title="${escHtml(t.tip)}"><b>${escHtml(t.v)}</b><span>${escHtml(t.k)}</span></div>`).join('')}</div>`:'')+'</div>'
+      :`<div class="dev${x.off?' isoff':''}${x.id==='gps:phone'?' clickable':''}" data-tile="${escHtml(x.id)}" title="${escHtml(x.id==='gps:phone'?'Click for the QR code that connects your phone':x.tip)}"><div class="dot ${x.dot}"></div><div><div class="n">${escHtml(x.n)}</div><div class="d">${escHtml(x.d)}</div></div>`
+        +sw(x)+'</div>').join('');
   }
   const stuck=(w.adapters||[]).find(a=>a.monitor&&!off.has(a.id)&&(a.state==='needs replug'||a.state==='needs WinUSB'));
   $("#hw-note").textContent=w.error||(stuck?`${cleanName(stuck.name)}: ${stuck.detail}`:'')||w.reason||'';
@@ -2148,7 +2224,7 @@ function renderWardrive(s){
   const wf=w.wifi||{}, bl=w.ble||{}, cap=w.captures||{}, pend=w.pending||{};
   const queued=Math.max(c.has_wigle?pend.wigle||0:0, c.has_api_key?pend.wdgwars||0:0, c.has_wardrift_key?pend.wardrift||0:0);
   animateNum($("#n-wifi"), wf.run||0); animateNum($("#n-ble"), bl.run||0);
-  $("#t-wifi").textContent=fmt(wf.all)+" total";
+  $("#t-wifi").textContent=fmt(wf.all)+" total"+(w.sd_rows?` · ${fmt(w.sd_rows)} from SD cards`:'');
   $("#t-ble").textContent=fmt(bl.all)+" total";
   $("#s-wifi").textContent=$("#s-ble").textContent=fmt(queued)+" rows to send";
   $("#s-wifi").title=$("#s-ble").title=['wigle','wdgwars','wardrift'].map(k=>`${{wigle:'WiGLE',wdgwars:'WDGWars',wardrift:'Wardrift'}[k]}: ${fmt(pend[k])} rows${(w.last_upload||{})[k]?' · last: '+w.last_upload[k]:''}`).join('\n');

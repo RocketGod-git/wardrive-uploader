@@ -38,6 +38,7 @@ from .boards import BoardBridge
 from .capture import Hit, wpasec_my_nets, wpasec_results, wpasec_upload
 from .gps import GpsHub, gps_ports, lan_addresses, max_age, NET_PORT
 from .monitor import MonitorManager
+from .sdimport import ImportResult, SdImport
 
 log = logging.getLogger("wdgwars.wardrive")
 
@@ -142,6 +143,8 @@ class Wardriver:
         self.monitor = MonitorManager(on_hit=self._on_hit)
         self.boards = BoardBridge(on_hit=self._on_hit, on_event=on_event)
         self.gps.extra = [self.boards.gps]
+        self.sd = SdImport(self.dir, self.import_rows, on_event)
+        self.boards.sd = self.sd
         self.off: set[str] = set()
         self.wpasec_key = ""
         self._wpasec_lock = threading.Lock()
@@ -160,6 +163,7 @@ class Wardriver:
         self.run_ble: set[str] = set()
         self.new_wifi = self.new_ble = 0
         self.rows = 0
+        self.sd_rows = 0
         self.trail: collections.deque = collections.deque(maxlen=1500)
 
     def _load_index(self) -> dict[str, Any]:
@@ -208,6 +212,7 @@ class Wardriver:
         self.boards.configure("esp" not in off, {x[4:] for x in off if x.startswith("esp:")},
                               device_label(cfg.get("upload_device_label", "")),
                               board_skip if board_skip is not None else exclude_ports)
+        self.boards.off_other = {x for x in off if x.startswith(("ser:", "bisc:"))}
         key = (cfg.get("wpasec_key") or "").strip()
         if key and key != self.wpasec_key:
             # A new key, or the app just opened: send anything not sent yet and
@@ -388,6 +393,48 @@ class Wardriver:
             meta["rows"] = meta.get("rows", 0) + len(rows)
             self.rows += len(rows)
         self._save_index()
+
+    def import_rows(self, rows: list[dict[str, Any]], label: str, count_as: str | None = None) -> ImportResult:
+        """Rows from a device's SD card, saved as a run of their own so the next
+        upload sends them like any other run."""
+        if not rows:
+            return ImportResult(0, 0, 0)
+        new = 0
+        new_wifi: list[str] = []
+        new_ble: list[str] = []
+        with self._lock:
+            for r in rows:
+                try:
+                    n = int(r["mac"].replace(":", ""), 16)
+                except ValueError:
+                    continue
+                wifi = r.get("type", "WIFI") == "WIFI"
+                (self.run_wifi if wifi else self.run_ble).add(r["mac"])
+                seen = self.all_wifi if wifi else self.all_ble
+                if n not in seen:
+                    seen.add(n)
+                    new += 1
+                    (new_wifi if wifi else new_ble).append(f"{n:012x}")
+            self.new_wifi += len(new_wifi)
+            self.new_ble += len(new_ble)
+            self.rows += len(rows)
+            self.sd_rows += len(rows)
+            name = time.strftime("sd-%Y%m%d-%H%M%S") + f"-{int(time.time() * 1000) % 1000:03d}.jsonl"
+            with open(self.dir / name, "w", encoding="utf-8") as f:
+                for r in rows:
+                    f.write(json.dumps(r, ensure_ascii=False, separators=(",", ":")) + "\n")
+            self.index["runs"][name] = {"rows": len(rows), "source": label}
+        self._save_index()
+        if count_as:
+            self.boards.count_collected(count_as, rows)
+        for fname, items in (("seen_wifi.txt", new_wifi), ("seen_ble.txt", new_ble)):
+            if items:
+                try:
+                    with open(self.dir / fname, "a", encoding="ascii") as fh:
+                        fh.write("\n".join(items) + "\n")
+                except OSError:
+                    pass
+        return ImportResult(len(rows), new, 0)
 
     # -- handshake and PMKID captures ------------------------------------------------
     def _load_captures(self) -> dict[str, dict[str, Any]]:
@@ -653,7 +700,7 @@ class Wardriver:
                          "all": len(self.all_wifi)},
                 "ble": {"in_view": len(self.live_ble), "run": len(self.run_ble), "new": self.new_ble,
                         "all": len(self.all_ble)},
-                "rows": self.rows,
+                "rows": self.rows, "sd_rows": self.sd_rows,
                 "adapters": [dict(a, id=f"wifi:{a['name']}") for a in (self.wifi.adapters if self.wifi else [])]
                             + self.monitor.status(),
                 "captures": self._captures_view(),

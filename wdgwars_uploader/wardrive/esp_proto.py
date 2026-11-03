@@ -148,6 +148,64 @@ def cmd_frame(command: str, cid: int) -> bytes:
         + len(p).to_bytes(2, "little") + p
 
 
+# The `board=` ids our own firmware reports.
+OWN_BOARD_IDS = {"crumb", "biscuit_crumb", "ghostboard", "ghost_board", "poltergeist", "rabbitlabs_poltergeist",
+                 "biscuit_pro", "biscuit_ultra", "biscuit_dual", "koko_v8", "marauder_mini_v3", "awok_dual_c5",
+                 "generic", "none"}
+
+
+def _board_id(kv: dict[str, str]) -> str:
+    return (kv.get("board") or kv.get("model") or "").strip().lower()
+
+
+def is_piglet_fw(fw: str | None) -> bool:
+    """Piglet firmware: the older bridge says `fw=warhog-1.0`, newer Piglet reports its
+    version as `1<major>.<minor>.00` (v2.83 is "12.83.00"). Ours is 1.x."""
+    f = (fw or "").strip().lower()
+    if f.startswith("warhog"):
+        return True
+    try:
+        return int(f.split(".", 1)[0]) >= 10
+    except ValueError:
+        return False
+
+
+def is_piglet(kv: dict[str, str]) -> bool:
+    return _board_id(kv) not in OWN_BOARD_IDS and is_piglet_fw(kv.get("fw"))
+
+
+def is_partner_board(kv: dict[str, str]) -> bool:
+    """Other firmware speaking this protocol: Piglet, or any board naming itself with a
+    `board=` / `model=` id that isn't ours."""
+    if is_piglet(kv):
+        return True
+    i = _board_id(kv)
+    return bool(i) and i not in OWN_BOARD_IDS
+
+
+def piglet_label(fw: str | None) -> str | None:
+    """"Piglet v2.83" from "12.83.00", "Piglet" from "warhog-1.0"; None when not Piglet."""
+    if not is_piglet_fw(fw):
+        return None
+    parts = fw.strip().split(".")
+    head = parts[0]
+    try:
+        major, minor = int(head[1:]), int(parts[1])
+    except (ValueError, IndexError):
+        return "Piglet"
+    return f"Piglet v{major}.{minor}" if len(head) >= 2 and head.startswith("1") else "Piglet"
+
+
+def partner_name(kv: dict[str, str]) -> str | None:
+    if is_piglet(kv):
+        return piglet_label(kv.get("fw"))
+    n = (kv.get("board_name") or "").replace("_", " ").strip()
+    if n:
+        return n
+    i = (kv.get("board") or kv.get("model") or "").strip().replace("_", " ")
+    return (i[:1].upper() + i[1:]) if i else None
+
+
 def key_values(line: str, tag: str) -> dict[str, str]:
     body = line[len(tag):] if line.startswith(tag) else line
     out = {}
