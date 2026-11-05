@@ -173,6 +173,7 @@ h1{font-size:20px;letter-spacing:3px;margin:0;font-weight:700;
 .meta{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:6px 12px;font-size:12px}
 .meta div{min-width:0;color:#dfe7f2;overflow-wrap:anywhere}
 .meta div i{font-style:normal;color:var(--muted);font-size:9px;letter-spacing:1px;text-transform:uppercase;margin-right:6px}
+.meta .w2{grid-column:1/-1}
 .meta .warn{color:var(--amber)}.meta .hot{color:var(--red)}.meta .good{color:var(--green)}.meta .cool{color:#4da3ff}.meta .acc{color:var(--acc)}
 .batt{display:inline-block;width:22px;height:10px;border:1px solid currentColor;border-radius:2px;position:relative;vertical-align:-1px;margin-right:4px}
 .batt:after{content:"";position:absolute;right:-3px;top:2px;width:2px;height:4px;background:currentColor}
@@ -926,11 +927,29 @@ function accFor(...names){const t=names.filter(Boolean).join(' ').toLowerCase();
 function sigBars(rssi){const n=rssi>=-60?4:rssi>=-70?3:rssi>=-80?2:1;return `<span class="sig">${[4,6,8,10].map((h,i)=>`<i class="${i<n?'on':''}" style="height:${h}px"></i>`).join('')}</span>`;}
 function battIcon(p){return `<span class="batt"><i style="width:${Math.max(1,Math.round(p*0.18))}px"></i></span>`;}
 function metaRow(k,v,cls){return v==null||v===''?'':`<div class="${cls||''}"><i>${escHtml(k)}</i>${v}</div>`;}
-function battMeta(o){
-  if(o.battery==null) return '';
-  const cls=o.battery<=15?'hot':(o.battery<=30?'warn':'good');
-  const extra=[o.batt_mv?`${(o.batt_mv/1000).toFixed(2)} V`:'',o.batt_rate!=null?`${o.batt_rate>0?'+':''}${o.batt_rate.toFixed(1)}%/h`:''].filter(Boolean).join(' · ');
-  return `<div class="${cls}" title="${escHtml(extra)}"><i>batt</i>${battIcon(o.battery)}${o.battery}%${o.batt_rate!=null?` <span style="color:var(--muted)">${o.batt_rate>0?'+':''}${o.batt_rate.toFixed(1)}%/h</span>`:''}</div>`;
+/** Power, from what the board's gauge reports (%, cell volts, charge rate). Charging, on battery and time left are
+ *  read from the rate and marked as estimates; the gauge has no current sensor, so there are no watts or amps. */
+function battMeta(o,linked){
+  if(o.battery==null){
+    // A linked board that reported its details without a gauge has no battery to show.
+    return linked&&o.caps_known&&!o.has_battery?`<div title="No battery gauge on this board: it runs on whatever powers it"><i>power</i>no battery</div>`:'';
+  }
+  const p=o.battery, r=o.batt_rate;
+  let state='', cls=p<=15?'hot':(p<=30?'warn':'good');
+  if(r!=null&&r>0.3){ state='charging'; cls='good'; }
+  else if(r!=null&&r<-0.3){ const h=p/(-r); state=`on battery · ~${h>=10?Math.round(h):h.toFixed(1)} h left (est.)`; }
+  else if(r!=null&&p>=97) state='full';
+  else if(p===0) state='gauge reads 0%';
+  const tip=[o.batt_mv?`cell ${(o.batt_mv/1000).toFixed(2)} V`:'',r!=null?`rate ${r>0?'+':''}${r.toFixed(1)}%/h`:'',
+    p===0?'A running board at 0% is on outside power, or its cell is missing or flat':''].filter(Boolean).join(' · ');
+  return `<div class="${cls} w2" title="${escHtml(tip)}"><i>batt</i>${battIcon(p)}${p}%${o.batt_mv?` · ${(o.batt_mv/1000).toFixed(2)} V`:''}`
+    +`${state?` <span style="color:var(--muted)">${escHtml(state)}</span>`:''}</div>`;
+}
+function resetMeta(o){
+  if(!o.reset) return '';
+  const bad=o.reset==='brownout'?'hot':(['crash','watchdog','panic','int_wdt','task_wdt'].some(k=>o.reset.includes(k))?'warn':'');
+  const word={brownout:'brownout · weak power',power_on:'power on',software:'restart'}[o.reset]||o.reset.replace(/_/g,' ');
+  return metaRow('last reset',escHtml(word)+(o.boots!=null?` <span style="color:var(--muted)">· boot ${fmt(o.boots)}</span>`:''),bad+' w2');
 }
 function tempMeta(t){return t==null?'':metaRow('temp',`${t} °C`,t>=75?'hot':(t>=60?'warn':(t<=35?'cool':'good')));}
 function chipName(c){return c?escHtml(String(c).toUpperCase().replace(/^ESP32-?/,'ESP32-')):'';}
@@ -962,14 +981,14 @@ function boardCard(b,off,sd){
     {k:'collected ↑',v:fmt((b.got_aps||0)+(b.got_bt||0)),cls:'got',tip:`${fmt(b.got_aps)} Wi-Fi · ${fmt(b.got_bt)} Bluetooth since the app started (SD card runs included)`}];
   if(b.role==='capture'||b.captures) hero.push({k:'captures',v:fmt(b.captures),cls:'cap',tip:'Handshakes and PMKIDs'});
   const live=sd&&sd.live&&sd.live.device===b.name?sd.live:null;
-  const meta=[battMeta(b),tempMeta(b.temp),
+  const meta=[battMeta(b,true),tempMeta(b.temp),
     b.gps?metaRow('gps',b.gps_fix?(b.gps_sats?`${b.gps_sats} sats`:'fix'):'no fix',b.gps_fix?'good':'warn'):'',
     b.sd?metaRow('sd',live?`sending run ${live.index}/${live.count}`:(b.sd_free_mb!=null?(b.sd_free_mb>=1024?(b.sd_free_mb/1024).toFixed(1)+' GB':b.sd_free_mb+' MB')+' free':'ready'),live?'good':'cool'):'',
     b.sd_taken?metaRow('runs in',fmt(b.sd_taken),'good'):'',
     b.coproc_mode&&b.coproc_mode!=='off'?metaRow('2nd radio',`${fmt(b.coproc)} ${b.coproc_mode==='btc'?'BT':'APs'}`,'acc'):'',
     b.uptime!=null?metaRow('up',fmtAge(b.uptime)):'',
     b.linked_for!=null?metaRow('linked',fmtAge(b.linked_for)):'',
-    metaRow('fw',escHtml(piglet?b.board:(b.fw||'?'))), b.chip?metaRow('chip',chipName(b.chip)):''].join('');
+    metaRow('fw',escHtml(piglet?b.board:(b.fw||'?'))), b.chip?metaRow('chip',chipName(b.chip)):'', resetMeta(b)].join('');
   return devCard({id:b.id,acc:accFor(b.board,piglet?'piglet':''),name:b.partner&&b.board?b.board:b.name,sub:b.partner?b.name:(b.board||'WardriveESP'),
     state:streaming&&!b.foreign&&!b.crashing?'':(b.foreign||b.crashing||b.phase==='offline'?'bad':'idle'),
     off:isOff,sw:true,pills,hero,meta,sdPct:live&&live.total?Math.floor(live.done*100/live.total):null,
@@ -985,7 +1004,7 @@ function awayCard(n,off,espOff){
   const banner=n.linked
     ?`<div class="bheld">⛓ Held by <b>${escHtml(n.mine?'this PC (another app)':n.holder)}</b>${n.iphone?' · iPhone':''}</div>`
     :`<div class="bheld free">● ${n.off_here?'Free · switched off on this PC':(espOff?(n.scanning?'Free · recording to its SD card':'Free · not scanning'):'Free · linking…')}</div>`;
-  const meta=[n.battery?battMeta(n):'',tempMeta(n.temp),n.gps?metaRow('gps','yes','good'):'',
+  const meta=[battMeta(n,false),tempMeta(n.temp),n.gps?metaRow('gps','yes','good'):'',
     n.count?metaRow(n.mode==='bt'?'BT last scan':'APs last scan',fmt(n.count),'acc'):'',
     n.fw?metaRow('fw',escHtml(n.fw)):'',metaRow('heard',n.age<5?'now':`${n.age}s ago`)].join('');
   return devCard({id:n.id,acc:accFor(n.board),name:n.name,sub:n.board||'WardriveESP',state:'away',off:false,sw:false,pills,banner,meta,
@@ -999,7 +1018,7 @@ function otherCard(o,off,sd){
   const hero=o.kind==='Flipper Zero'&&!o.aps?[]:[{k:'APs in view',v:fmt(o.aps)}];
   if(o.transport!=='USB'||o.bt) hero.push({k:'BT in view',v:fmt(o.bt)});
   hero.push({k:'collected ↑',v:fmt((o.got_aps||0)+(o.got_bt||0)),cls:'got',tip:`${fmt(o.got_aps)} Wi-Fi · ${fmt(o.got_bt)} Bluetooth since the app started (SD card files included)`});
-  const meta=[battMeta(o),tempMeta(o.temp),
+  const meta=[battMeta(o,false),tempMeta(o.temp),
     o.scanner_up!=null?metaRow('scanner',o.scanner_up?'linked':'down',o.scanner_up?'good':'hot'):'',
     o.chip?metaRow('chip',chipName(o.chip)):'', o.fw?metaRow('fw',escHtml(o.fw)):'', o.serial?metaRow('sn',escHtml(o.serial)):''].join('');
   const sdl=sd&&sd.live&&sd.live.device===o.name?sd.live:null;

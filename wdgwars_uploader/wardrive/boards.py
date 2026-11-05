@@ -101,6 +101,8 @@ class BoardInfo:
     sd_free_mb: int | None = None
     gps_sats: int | None = None
     gps_at: float = 0.0
+    reset: str | None = None
+    boots: int | None = None
 
     @property
     def dual_band(self) -> bool:
@@ -1725,10 +1727,14 @@ class BoardBridge(_Listener):
         re-linking that board. A brownout never counts, only a power hint in the log."""
         kv = P.key_values(line, "WD:BOOT")
         reset = kv.get("reset")
+        if reset:
+            s.info.reset = reset
+            self._dirty = True
         try:
             boots = int(kv["boots"])
         except (KeyError, ValueError):
             return
+        s.info.boots = boots
         name, now = s.info.name, _now()
         if reset == "brownout":
             seen = [x for x in self.brownouts.get(name, []) if now - x[1] < 90]
@@ -1828,6 +1834,7 @@ class BoardBridge(_Listener):
                 "got_aps": len(self.collected.get(i.key, ((), ()))[0]), "got_bt": len(self.collected.get(i.key, ((), ()))[1]),
                 "temp": i.temp_c if i.temp_c is not None else (self.beacons[i.id].temp_c if i.id in self.beacons else None),
                 "batt_mv": i.batt_mv, "batt_rate": i.batt_rate, "uptime": i.uptime_s,
+                "has_battery": i.has_battery, "caps_known": i.fw is not None, "reset": i.reset, "boots": i.boots,
                 "rssi": self.beacons[i.id].rssi if i.transport != "USB" and i.id in self.beacons else None,
                 "linked_for": int(now - s.since) if i.phase in (LINKED, STREAMING) else None,
                 "sd": s.sd_card, "sd_free_mb": i.sd_free_mb, "sd_taken": self.sd_taken.get(i.key, 0),
