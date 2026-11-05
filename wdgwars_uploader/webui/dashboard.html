@@ -939,7 +939,6 @@ function battMeta(o,linked){
   if(r!=null&&r>0.3){ state='charging'; cls='good'; }
   else if(r!=null&&r<-0.3){ const h=p/(-r); state=`on battery · ~${h>=10?Math.round(h):h.toFixed(1)} h left (est.)`; }
   else if(r!=null&&p>=97) state='full';
-  else if(p===0) state='gauge reads 0%';
   const tip=[o.batt_mv?`cell ${(o.batt_mv/1000).toFixed(2)} V`:'',r!=null?`rate ${r>0?'+':''}${r.toFixed(1)}%/h`:'',
     p===0?'A running board at 0% is on outside power, or its cell is missing or flat':''].filter(Boolean).join(' · ');
   return `<div class="${cls} w2" title="${escHtml(tip)}"><i>batt</i>${battIcon(p)}${p}%${o.batt_mv?` · ${(o.batt_mv/1000).toFixed(2)} V`:''}`
