@@ -155,15 +155,15 @@ h1{font-size:20px;letter-spacing:3px;margin:0;font-weight:700;
 .bc .nm{flex:1;min-width:0}
 .bc .nm b{display:block;font-size:15px;color:#f2f6ff;overflow-wrap:anywhere}
 .bc .nm span{display:block;font-size:11px;color:var(--acc);overflow-wrap:anywhere;margin-top:1px}
-.bpills{display:flex;gap:5px;flex-wrap:wrap;margin:9px 0 10px}
-.bp{--pc:var(--muted);font-size:10px;letter-spacing:1px;text-transform:uppercase;border:1px solid color-mix(in srgb,var(--pc) 60%,transparent);
+.bpills{display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin:9px 0 10px}
+.bp{--pc:var(--muted);display:inline-flex;align-items:center;line-height:16px;font-size:10px;letter-spacing:1px;text-transform:uppercase;border:1px solid color-mix(in srgb,var(--pc) 60%,transparent);
   background:color-mix(in srgb,var(--pc) 12%,transparent);border-radius:20px;padding:2px 8px;color:var(--pc);white-space:nowrap}
 .bp.usb{--pc:var(--cyan)}.bp.ble{--pc:#4da3ff}.bp.cap{--pc:var(--amber)}.bp.wifi{--pc:var(--green)}.bp.bt{--pc:#a78bfa}
 .bp.ch{--pc:#8fb3c9}.bp.warn{--pc:var(--amber)}.bp.bad{--pc:var(--red)}.bp.acc{--pc:var(--acc)}.bp.held{--pc:#ff7ab8}.bp.free{--pc:var(--green)}
-.held{display:flex;align-items:center;gap:8px;margin:2px 0 10px;padding:8px 10px;border-radius:8px;border:1px solid rgba(255,122,184,.35);
+.bheld{display:flex;align-items:center;gap:8px;margin:2px 0 10px;padding:8px 10px;border-radius:8px;border:1px solid rgba(255,122,184,.35);
   background:linear-gradient(90deg,rgba(255,122,184,.12),transparent);font-size:12px;color:#ffd2e6}
-.held b{color:#fff}
-.held.free{border-color:rgba(37,244,167,.35);background:linear-gradient(90deg,rgba(37,244,167,.10),transparent);color:#c9ffe9}
+.bheld b{color:#fff}
+.bheld.free{border-color:rgba(37,244,167,.35);background:linear-gradient(90deg,rgba(37,244,167,.10),transparent);color:#c9ffe9}
 .bhero{display:flex;gap:8px;margin-bottom:10px}
 .bhero .h{flex:1;min-width:0;border-radius:9px;background:#0a121b;border:1px solid #111d29;padding:8px 10px}
 .bhero .h b{display:block;font-size:24px;line-height:1.05;color:var(--acc);font-variant-numeric:tabular-nums;text-shadow:0 0 14px color-mix(in srgb,var(--acc) 35%,transparent)}
@@ -983,9 +983,9 @@ function awayCard(n,off,espOff){
   if(n.scanning&&n.mode) pills.push({t:{wifi:'Wi-Fi',bt:'Bluetooth',cap:'capture',radar:'radar'}[n.mode],cls:{wifi:'wifi',bt:'bt',cap:'cap',radar:'acc'}[n.mode]});
   if(n.updating) pills.push({t:'updating',cls:'warn'});
   const banner=n.linked
-    ?`<div class="held">⛓ Held by <b>${escHtml(n.mine?'this PC (another app)':n.holder)}</b>${n.iphone?' · iPhone':''}</div>`
-    :`<div class="held free">● ${n.off_here?'Free · switched off on this PC':(espOff?(n.scanning?'Free · recording to its SD card':'Free · not scanning'):'Free · linking…')}</div>`;
-  const meta=[battMeta(n),tempMeta(n.temp),n.gps?metaRow('gps','yes','good'):'',
+    ?`<div class="bheld">⛓ Held by <b>${escHtml(n.mine?'this PC (another app)':n.holder)}</b>${n.iphone?' · iPhone':''}</div>`
+    :`<div class="bheld free">● ${n.off_here?'Free · switched off on this PC':(espOff?(n.scanning?'Free · recording to its SD card':'Free · not scanning'):'Free · linking…')}</div>`;
+  const meta=[n.battery?battMeta(n):'',tempMeta(n.temp),n.gps?metaRow('gps','yes','good'):'',
     n.count?metaRow(n.mode==='bt'?'BT last scan':'APs last scan',fmt(n.count),'acc'):'',
     n.fw?metaRow('fw',escHtml(n.fw)):'',metaRow('heard',n.age<5?'now':`${n.age}s ago`)].join('');
   return devCard({id:n.id,acc:accFor(n.board),name:n.name,sub:n.board||'WardriveESP',state:'away',off:false,sw:false,pills,banner,meta,
