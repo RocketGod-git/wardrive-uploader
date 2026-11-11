@@ -77,6 +77,8 @@ class SerialDevice:
 class DetectResult:
     rtlsdr_present: bool = False
     rtlsdr_label: str = ""
+    hackrf_present: bool = False
+    hackrf_label: str = ""
     serial_ports: list[SerialDevice] = field(default_factory=list)
 
     @property
@@ -100,7 +102,7 @@ class DetectResult:
     @property
     def adsb_radio_present(self) -> bool:
         """Any radio this app can get ADS-B from."""
-        return self.rtlsdr_present or self.portapack_present
+        return self.rtlsdr_present or self.hackrf_present or self.portapack_present
 
     @property
     def mesh_candidates(self) -> list[SerialDevice]:
@@ -199,6 +201,12 @@ def detect() -> DetectResult:
     r = DetectResult()
     r.serial_ports = _list_serial()
     r.rtlsdr_present, r.rtlsdr_label = _rtlsdr_present()
+    from . import hackrf
+    hit = hackrf.find_usb()
+    if hit:
+        r.hackrf_present = True
+        # One and Pro share a USB id: the bridge reads the board id once it opens it.
+        r.hackrf_label = (hackrf.bridge_status() or {}).get("board") or "HackRF"
     return r
 
 

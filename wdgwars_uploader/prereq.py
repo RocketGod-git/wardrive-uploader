@@ -15,8 +15,10 @@ _NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 ZADIG_URL = "https://zadig.akeo.ie/"
 
 
-def _check(name: str, ok: bool, status: str, detail: str = "", fix: str = "", url: str = "") -> dict:
-    return {"name": name, "ok": ok, "status": status, "detail": detail, "fix": fix, "url": url}
+def _check(name: str, ok: bool, status: str, detail: str = "", fix: str = "", url: str = "",
+           action: str = "") -> dict:
+    return {"name": name, "ok": ok, "status": status, "detail": detail, "fix": fix, "url": url,
+            "action": action}
 
 
 def check_python_deps() -> dict:
@@ -31,15 +33,25 @@ def check_python_deps() -> dict:
 def check_dump1090(configured_exe: str = "") -> dict:
     from . import adsb
     exe = adsb.find_dump1090(configured_exe)
+    name = "ADS-B decoder (dump1090)"
     if exe:
-        return _check("ADS-B decoder (dump1090)", True, "installed", detail=exe)
-    return _check("ADS-B decoder (dump1090)", False, "not installed",
-                  fix="Click 'Install dump1090' to fetch the Windows build automatically, "
-                      "or point Settings at a running dump1090 URL. If it was installed "
-                      "and has disappeared, check antivirus quarantine: Microsoft Defender "
-                      "flags this unsigned decoder as Trojan:Win32/Bearfoos.A!ml, a "
-                      "machine-learning false positive. The download is checked against a "
-                      "pinned SHA-256 of the gvanem/Dump1090 v1.0.0 release.")
+        return _check(name, True, "installed", detail=exe)
+    st = adsb.install_status()
+    if st["state"] == "downloading":
+        return _check(name, False, "downloading on its own…", detail=st["msg"])
+    pinned = ("The download is checked against a pinned SHA-256 of the gvanem/Dump1090 "
+              "v1.0.0 release.")
+    if st["state"] == "failed":
+        return _check(name, False, "download failed", detail=st["msg"],
+                      fix="It tries again on its own every 15 minutes, or press Install now. "
+                          "If it keeps disappearing, restore it from antivirus quarantine and "
+                          "allow it: Microsoft Defender flags this unsigned decoder as "
+                          "Trojan:Win32/Bearfoos.A!ml, a machine-learning false positive. "
+                          + pinned, action="install-dump1090")
+    return _check(name, False, "not installed",
+                  fix="It downloads on its own (about 25 MB) as soon as an SDR that needs it is "
+                      "plugged in. Press Install now to get it right away. " + pinned,
+                  action="install-dump1090")
 
 
 def rtlsdr_driver_state(rtlsdr_present: bool) -> dict:
@@ -74,6 +86,33 @@ def rtlsdr_driver_state(rtlsdr_present: bool) -> dict:
     )
 
 
+def hackrf_state(portapack_port: str = "") -> dict:
+    from . import adsb, hackrf
+    name = "HackRF"
+    st = hackrf.bridge_status()
+    if portapack_port and not hackrf.find_usb():
+        sw = adsb.portapack_switch_state(portapack_port)
+        return _check(name, False, "switching the PortaPack to HackRF mode…" if sw.get("sent")
+                      else "PortaPack found, switching it to HackRF mode")
+    if not st:
+        return _check(name, False, "starting…")
+    board = st.get("board") or "HackRF"
+    if st.get("state") == "streaming":
+        if st.get("no_signal"):
+            return _check(name, False, f"{board} · no signal",
+                          fix="The HackRF is sending empty samples. Check the antenna and use a "
+                              "data USB cable, or a powered hub if the port is weak.")
+        if not st.get("client"):
+            return _check(name, True, f"{board} · waiting for the decoder")
+        return _check(name, True, f"{board} · {st.get('msps', 0):.1f} Msps to the decoder",
+                      detail=f"firmware {st['firmware']}" if st.get("firmware") else "")
+    if st.get("error"):
+        return _check(name, False, "could not open it", detail=st["error"],
+                      fix="Close any other SDR program using the HackRF (SDR#, SDR++, GQRX, "
+                          "hackrf_transfer), then unplug it and plug it back in.")
+    return _check(name, False, "waiting for the HackRF")
+
+
 def portapack_state(port: str) -> dict:
     """Health of the PortaPack/Mayhem ADS-B source."""
     from . import mayhem
@@ -100,6 +139,10 @@ def check_all(devices, cfg: dict) -> list[dict]:
         # dump1090 and the WinUSB driver are irrelevant when the PortaPack does the
         # decoding on-device, so they are not reported as missing.
         checks.append(portapack_state(port))
+    elif source == "hackrf":
+        # The HackRF firmware asks Windows for WinUSB itself: no driver step.
+        checks.append(check_dump1090(cfg.get("dump1090_exe", "")))
+        checks.append(hackrf_state(port))
     else:
         checks.append(check_dump1090(cfg.get("dump1090_exe", "")))
         checks.append(rtlsdr_driver_state(bool(devices and devices.rtlsdr_present)))

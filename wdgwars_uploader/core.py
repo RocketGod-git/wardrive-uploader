@@ -17,7 +17,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from . import adsb, detect, mayhem, mesh, mesh_capture, prereq, watchdog
+from . import adsb, detect, hackrf, mayhem, mesh, mesh_capture, prereq, watchdog
 from . import wardrift, wigle
 from .wardrive.service import Wardriver
 from .config import Config, config_dir, device_label
@@ -106,6 +106,9 @@ class UploaderCore:
     def __init__(self, cfg: Config | None = None, state: LiveState | None = None) -> None:
         self.cfg = cfg or Config()
         self.state = state or LiveState()
+        # dump1090 downloads on its own when an SDR that needs it shows up: progress goes to the
+        # event log and the checks refresh when it ends, so the decoder launches.
+        adsb.set_hooks(self.state.event, self.poll_devices)
         self._last_detect: detect.DetectResult | None = None
         self._last_report: CycleReport | None = None
         self._last_advert_ts: float = 0.0
@@ -195,6 +198,7 @@ class UploaderCore:
         port = detect.pick_mesh_port(self.cfg.get("mesh_port", "auto"), det)
         # Merge (not replace) so driver_ok survives a flaky prereq check.
         self.state.update_device("rtlsdr", present=det.rtlsdr_present, label=det.rtlsdr_label)
+        self.state.update_device("hackrf", present=det.hackrf_present, label=det.hackrf_label)
         self.state.update_device("portapack", present=det.portapack_present,
                                  port=det.portapack_port, label=det.portapack_label)
         self.state.update_device("mesh", present=det.mesh_present, port=port or "",
@@ -248,6 +252,16 @@ class UploaderCore:
                                      device=st.get("device", ""), error=st.get("error", ""),
                                      aircraft=int(st.get("aircraft", 0) or 0),
                                      stalled_for=st.get("stalled_for"))
+        pp = self.state.devices.get("portapack", {})
+        sw = adsb.portapack_switch_state(pp.get("port", "")) if pp.get("present") else {}
+        self.state.update_device("portapack", switching=bool(sw.get("sent")) and not sw.get("failed"),
+                                 switch_failed=bool(sw.get("failed")))
+        hs = hackrf.bridge_status()
+        if hs:
+            self.state.update_device("hackrf", state=hs.get("state", ""), error=hs.get("error", ""),
+                                     msps=hs.get("msps", 0.0), no_signal=bool(hs.get("no_signal")),
+                                     firmware=hs.get("firmware", ""),
+                                     label=hs.get("board") or self.state.devices.get("hackrf", {}).get("label", ""))
         # obj is not None means a decoder is serving (even with an empty sky).
         self.state.adsb_source_ok = obj is not None
         display = _aircraft_items(obj)

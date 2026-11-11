@@ -651,6 +651,7 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
       <h2>Hardware</h2>
       <div class="devs">
         <div class="dev"><div class="dot" id="d-sdr"></div><div><div class="n">RTL-SDR</div><div class="d" id="d-sdr-t">scanning…</div></div><label class="hwsw" id="sw-sdr" title="Use for ADS-B" style="display:none"><input type="checkbox" data-cfg="adsb_enabled"><span></span></label></div>
+        <div class="dev"><div class="dot" id="d-hrf"></div><div><div class="n">HackRF</div><div class="d" id="d-hrf-t">scanning…</div></div><label class="hwsw" id="sw-hrf" title="Use for ADS-B" style="display:none"><input type="checkbox" data-cfg="adsb_enabled"><span></span></label></div>
         <div class="dev"><div class="dot" id="d-pp"></div><div><div class="n">PortaPack</div><div class="d" id="d-pp-t">scanning…</div></div><label class="hwsw" id="sw-pp" title="Use for ADS-B" style="display:none"><input type="checkbox" data-cfg="adsb_enabled"><span></span></label></div>
         <div class="dev"><div class="dot" id="d-mesh"></div><div><div class="n" id="d-mesh-n">Mesh</div><div class="d" id="d-mesh-t">scanning…</div></div><label class="hwsw" id="sw-mesh" title="Use mesh radios" style="display:none"><input type="checkbox" data-cfg="mesh_enabled"><span></span></label></div>
         <div id="hw-dyn" style="display:contents"></div>
@@ -1112,17 +1113,27 @@ function render(s){
     }
   }
   // devices
-  const sdr=s.devices.rtlsdr||{}, mesh=s.devices.mesh||{}, pp=s.devices.portapack||{};
+  const sdr=s.devices.rtlsdr||{}, mesh=s.devices.mesh||{}, pp=s.devices.portapack||{}, hrf=s.devices.hackrf||{};
   // Which radio is actually feeding aircraft right now ("rtlsdr" | "mayhem" | "").
   const adsbActive = (s.config&&s.config.adsb_active_source)||"";
   // Red means "you need to do something". A missing RTL-SDR while the PortaPack
   // feeds aircraft is not that - show it neutral.
   setDot("#d-sdr", sdr.present ? (sdr.driver_ok===false ? "warn" : "on")
-                               : (adsbActive==="mayhem" ? "" : "off"));
+                               : (adsbActive==="mayhem"||adsbActive==="hackrf" ? "" : "off"));
   $("#d-sdr-t").textContent = sdr.present
       ? (sdr.driver_ok===false ? (sdr.label+" — needs WinUSB driver") : sdr.label)
       // Not having an RTL-SDR is not a fault when the PortaPack is the source.
-      : (adsbActive==="mayhem" ? "not detected — using PortaPack" : "not detected");
+      : (adsbActive==="mayhem" ? "not detected — using PortaPack"
+         : adsbActive==="hackrf" ? "not detected — using HackRF" : "not detected");
+  // HackRF One or Pro: run here and decoded by dump1090.
+  const hrfActive = adsbActive==="hackrf";
+  setDot("#d-hrf", !hrf.present ? "off" : !hrfActive ? ""
+       : (hrf.state==="streaming" && !hrf.no_signal) ? "on" : "warn");
+  $("#d-hrf-t").textContent = !hrf.present ? "not detected"
+      : !hrfActive ? `${hrf.label||"HackRF"} · standby (RTL-SDR in use)`
+      : hrf.state==="streaming" ? (hrf.no_signal ? `${hrf.label} — no signal, check the antenna`
+                                                 : `${hrf.label} · ${(hrf.msps||0).toFixed(1)} Msps`)
+      : hrf.error ? `${hrf.label||"HackRF"} — ${hrf.error}` : `${hrf.label||"HackRF"} — starting…`;
   // A connected PortaPack whose log stopped growing is NOT healthy: the console
   // still answers, so "connected" alone would show green while nothing is fed.
   const ppStall = (pp.stalled_for!=null && pp.stalled_for > 300) ? Math.round(pp.stalled_for/60) : 0;
@@ -1133,8 +1144,10 @@ function render(s){
   setDot("#d-pp", !pp.present ? (adsbActive==="rtlsdr" ? "" : "off")
                 : !ppActive   ? ""
                 : (pp.connected && !ppStall) ? "on" : "warn");
+  if(pp.present && pp.switching){ setDot("#d-pp","warn"); }
   $("#d-pp-t").textContent = !pp.present ? "not detected"
-      : !ppActive ? `${pp.port} · standby (RTL-SDR in use)`
+      : pp.switching ? `${pp.port} · switching to HackRF mode…`
+      : !ppActive ? `${pp.port} · standby (${adsbActive==="hackrf"?"HackRF":"RTL-SDR"} in use)`
       : pp.connected
           ? (ppStall ? `${pp.port} — no data for ${ppStall}m (stalled)`
                      : `${pp.port} · ${pp.aircraft||0} aircraft`)
@@ -1161,12 +1174,15 @@ function render(s){
   // Only hardware that is plugged in is listed; unplugging a radio drops its tile.
   $("#d-sdr").closest('.dev').style.display=sdr.present?'':'none';
   $("#d-pp").closest('.dev').style.display=pp.present?'':'none';
+  $("#d-hrf").closest('.dev').style.display=hrf.present?'':'none';
+  hwSwitch("#sw-hrf", hrf.present, cc.adsb_enabled!==false);
   hwSwitch("#sw-sdr", sdr.present, cc.adsb_enabled!==false);
   hwSwitch("#sw-pp", pp.present, cc.adsb_enabled!==false);
   hwSwitch("#sw-mesh", mesh.present||mdevs.length, cc.mesh_enabled!==false);
   if(cc.adsb_enabled===false){
     if(sdr.present){ setDot("#d-sdr",""); $("#d-sdr-t").textContent=sdr.label+" · off"; }
     if(pp.present){ setDot("#d-pp",""); $("#d-pp-t").textContent=pp.port+" · off"; }
+    if(hrf.present){ setDot("#d-hrf",""); $("#d-hrf-t").textContent=(hrf.label||"HackRF")+" · off"; }
   }
   if(cc.mesh_enabled===false && (mesh.present||mdevs.length)){ setDot("#d-mesh",""); $("#d-mesh-t").textContent="off"; }
   $("#d-up").textContent = s.upload_in_progress ? "UPLOADING…" : "idle";
@@ -1309,7 +1325,13 @@ function renderPrereqs(p){
       <div><div class="s">${c.name} <span class="m">— ${c.status}</span></div>
         ${c.detail?`<div class="m">${c.detail}</div>`:''}
         ${!c.ok&&c.fix?`<div class="fix">▶ ${c.fix} ${c.url?`<a href="${c.url}" target="_blank">${c.url}</a>`:''}</div>`:''}
+        ${!c.ok&&c.action==='install-dump1090'?`<button class="btn ghost" type="button" style="margin-top:6px" onclick="installDecoder(this)">Install now</button>`:''}
       </div></div>`).join('');
+}
+async function installDecoder(b){
+  b.disabled=true; b.textContent='Downloading…';
+  await api('/api/install-dump1090','POST',{});
+  setTimeout(poll,800);
 }
 
 let _lastEventSig='';

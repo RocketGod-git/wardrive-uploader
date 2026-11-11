@@ -5,10 +5,14 @@ radio is available.
 downstream depends on which one is in use:
 
 * ``rtlsdr`` - decoded on the PC by dump1090 (this module).
+* ``hackrf`` - a HackRF One or Pro, decoded on the PC by the same dump1090,
+  which reads the HackRF's samples from :mod:`wdgwars_uploader.hackrf` over its
+  rtl_tcp input. A PortaPack running Mayhem is switched into HackRF mode and
+  used this way too.
 * ``mayhem`` - a PortaPack/HackRF decodes on-device and its log is read back
   over the CDC console (:mod:`wdgwars_uploader.mayhem`).
 
-For the RTL-SDR path this module finds, installs on demand and launches the
+For the RTL-SDR path this module finds, downloads on its own and launches the
 all-in-one **gvanem/Dump1090** Windows build. That build is HTTP-serve-only (no
 ``--write-json``), so aircraft are polled from ``/data/aircraft.json`` on :8080
 rather than read from a file. It also requires the RTL-SDR to be bound to the
@@ -48,6 +52,71 @@ _proc: subprocess.Popen | None = None
 _last_launch_attempt: float = 0.0
 _RELAUNCH_BACKOFF = 60.0
 _launch_lock = threading.Lock()   # serialize the launch decision across threads
+_launched_args = ""                # the arguments the running decoder was started with
+
+# PortaPack -> HackRF mode switch, per serial port: when "hackrf" was sent and
+# whether the board failed to come back as a HackRF (then its serial log is read).
+_PP_SWITCH_WAIT = 25.0
+_pp_switch: dict[str, dict[str, Any]] = {}
+
+# Automatic decoder download: an SDR that decodes on the PC with no dump1090 on disk fetches
+# the pinned build in the background, so nobody has to find and install it by hand.
+# A failure retries every 15 minutes, three times per run; "Install now" always retries.
+_AUTO_RETRY = 15 * 60
+_AUTO_TRIES = 3
+_install: dict[str, Any] = {"state": "", "msg": "", "at": 0.0, "tries": 0}
+_install_lock = threading.Lock()
+_on_event: Callable[[str], None] | None = None
+_on_done: Callable[[], None] | None = None
+
+
+def set_hooks(on_event: Callable[[str], None] | None = None,
+              on_done: Callable[[], None] | None = None) -> None:
+    """Where download progress goes (the event log) and what runs after it ends."""
+    global _on_event, _on_done
+    _on_event, _on_done = on_event, on_done
+
+
+def install_status() -> dict[str, Any]:
+    return dict(_install)
+
+
+def start_install(force: bool = False) -> bool:
+    """Download the decoder in the background unless one is already on its way or
+    the retry window has not passed. Returns True when a download started."""
+    with _install_lock:
+        if _install["state"] == "downloading":
+            return False
+        if not force and (_install["tries"] >= _AUTO_TRIES
+                          or (_install["at"] and time.time() - _install["at"] < _AUTO_RETRY)):
+            return False
+        _install.update(state="downloading", msg="downloading", at=time.time(),
+                        tries=_install["tries"] + 1)
+
+    def say(m: str) -> None:
+        _install["msg"] = m
+        if _on_event:
+            _on_event(f"dump1090: {m}")
+
+    def work() -> None:
+        try:
+            exe = install_dump1090(progress=say)
+            _install.update(state="ready", msg="installed")
+            if _on_event:
+                _on_event(f"dump1090 ready: {exe}")
+        except Exception as e:  # noqa: BLE001
+            _install.update(state="failed", msg=str(e))
+            if _on_event:
+                _on_event(f"dump1090 install failed: {e}")
+            log.warning("dump1090 install failed: %s", e)
+        if _on_done:
+            try:
+                _on_done()
+            except Exception:  # noqa: BLE001
+                log.exception("after dump1090 install")
+
+    threading.Thread(target=work, daemon=True, name="dump1090-install").start()
+    return True
 
 
 def tools_dir() -> Path:
@@ -99,7 +168,8 @@ def install_dump1090(progress: Callable[[str], None] | None = None) -> str:
         z.extractall(dest)
     exe = find_dump1090()
     if not exe:
-        raise RuntimeError("dump1090.exe not found after extraction")
+        raise RuntimeError("dump1090.exe was removed right after it was unpacked, "
+                           "most likely by antivirus. Microsoft Defender flags this unsigned decoder as Trojan:Win32/Bearfoos.A!ml, a machine-learning false positive")
     say("installed")
     return exe
 
@@ -127,7 +197,7 @@ def _kill_stray_decoders() -> None:
 
 def launch_dump1090(exe: str, args: str = "--net") -> bool:
     """Launch dump1090 headless. With --net it serves aircraft.json on :8080."""
-    global _proc
+    global _proc, _launched_args
     if not exe or not Path(exe).exists():
         return False
     if is_running():
@@ -138,6 +208,7 @@ def launch_dump1090(exe: str, args: str = "--net") -> bool:
         _proc = subprocess.Popen(cmd, cwd=str(Path(exe).parent), creationflags=_NO_WINDOW,
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                  stdin=subprocess.DEVNULL)
+        _launched_args = args
         return True
     except Exception as e:
         log.warning("dump1090 launch failed: %s", e)
@@ -221,7 +292,8 @@ def _prune_decoder_logs(folder: Path) -> None:
             log.warning("could not remove decoder log %s: %s", p.name, e)
 
 
-def _apply_decoder_cfg(exe: str, home: tuple[float, float] | None, gain: Any = None) -> None:
+def _apply_decoder_cfg(exe: str, home: tuple[float, float] | None, gain: Any = None,
+                       samplerate: str = "2.4M") -> None:
     """Pin the receiver location and tuner gain in the bundled build's dump1090.cfg.
 
     This build takes neither on the command line; it reads them from the cfg beside
@@ -244,6 +316,12 @@ def _apply_decoder_cfg(exe: str, home: tuple[float, float] | None, gain: Any = N
         # location services are off, leaving homepos unusable.
         new = re.sub(r"(?m)^(location\s*=\s*)[^\s#]+", lambda m: f"{m.group(1)}no", new)
         changes.append(f"homepos {lat:.5f},{lon:.5f}")
+    # 2.4 Msps (the shipped value) for an RTL-SDR, 2 Msps for a HackRF.
+    if re.search(r"(?m)^samplerate\s*=", new):
+        new2 = re.sub(r"(?m)^(samplerate\s*=\s*)[^\s#]+", lambda m: f"{m.group(1)}{samplerate}", new)
+        if new2 != new:
+            new = new2
+            changes.append(f"samplerate {samplerate}")
     g = _valid_gain(gain)
     if g is not None:
         new = re.sub(r"(?m)^(gain\s*=\s*)[^\s#]+", lambda m: f"{m.group(1)}{g:g}", new)
@@ -355,12 +433,48 @@ def resolve_source(cfg: dict[str, Any], det: Any = None) -> tuple[str, str]:
         return "rtlsdr", ""
     if choice == "mayhem":
         return "mayhem", _detect.pick_portapack_port(cfg.get("mayhem_port", "auto"), det) or ""
-    # auto: prefer a dedicated RTL-SDR receiver; fall back to a PortaPack.
     det = det or _detect.detect()
+    port = _detect.pick_portapack_port(cfg.get("mayhem_port", "auto"), det) or ""
+    # A PortaPack that went away (it rebooted into HackRF mode, or was unplugged)
+    # gets a fresh switch attempt the next time its serial console shows up.
+    for p in list(_pp_switch):
+        if p != port:
+            del _pp_switch[p]
+    if choice == "hackrf":
+        return "hackrf", ("" if getattr(det, "hackrf_present", False) else port)
+    # auto: an RTL-SDR first, then a HackRF, then a PortaPack, which is switched
+    # into HackRF mode. One that will not switch has its serial log read instead.
     if det.rtlsdr_present:
         return "rtlsdr", ""
-    port = _detect.pick_portapack_port(cfg.get("mayhem_port", "auto"), det) or ""
-    return ("mayhem", port) if port else ("", "")
+    if getattr(det, "hackrf_present", False):
+        return "hackrf", ""
+    if port:
+        return ("mayhem", port) if _pp_switch.get(port, {}).get("failed") else ("hackrf", port)
+    return "", ""
+
+
+def portapack_switch_state(port: str) -> dict[str, Any]:
+    """{"sent": time "hackrf" was sent or 0, "failed": bool} for a PortaPack port."""
+    return dict(_pp_switch.get(port, {}))
+
+
+def _switch_portapack(port: str) -> None:
+    """Send the PortaPack into HackRF mode once, and give up on it (falling back to
+    its serial log) if no HackRF has appeared within the wait."""
+    from . import hackrf, mayhem
+    st = _pp_switch.get(port)
+    if st is None:
+        mayhem.stop()   # the serial reader must let go of the console first
+        ok = hackrf.portapack_to_hackrf(port)
+        _pp_switch[port] = {"sent": time.time(), "failed": not ok}
+        if ok and _on_event:
+            _on_event(f"PortaPack on {port}: switching it to HackRF mode")
+        return
+    if not st["failed"] and time.time() - st["sent"] > _PP_SWITCH_WAIT:
+        st["failed"] = True
+        log.warning("PortaPack on %s did not come back as a HackRF; reading its log instead", port)
+        if _on_event:
+            _on_event(f"PortaPack on {port} did not switch to HackRF mode, reading its ADS-B log over serial instead")
 
 
 def active_source() -> str:
@@ -385,15 +499,31 @@ def ensure_decoder(cfg: dict[str, Any], driver_ok: bool | None = None,
     from . import mayhem
     source, port = resolve_source(cfg, det)
     _active_source = source
+    from . import hackrf
     if source == "mayhem":
         # Never leave a dump1090 running while a different radio is being read: it
         # would sit there holding a device and serving a stale JSON.
         stop_dump1090()
+        hackrf.stop_bridge()
         return mayhem.ensure_reader(port, cfg)
     mayhem.stop()
 
     if not cfg.get("dump1090_autostart", True):
         return is_running()
+    if source == "hackrf":
+        if port and not hackrf.find_usb():
+            _switch_portapack(port)   # comes back as a HackRF a few seconds later
+            return False
+        hackrf.ensure_bridge()
+        args = f"--net --device tcp://127.0.0.1:{hackrf.TCP_PORT}"
+        rate = "2M"
+    else:
+        hackrf.stop_bridge()
+        args = cfg.get("dump1090_args", "--net")
+        rate = "2.4M"
+    # A decoder this app started for the other radio is restarted for this one.
+    if is_running() and _launched_args != args:
+        stop_dump1090()
     url = (cfg.get("adsb_json_url") or DEFAULT_JSON_URL).strip()
     # Something already serving aircraft (this decoder, an orphan, or a
     # separately started dump1090) is reused. A duplicate would fight for the
@@ -404,7 +534,7 @@ def ensure_decoder(cfg: dict[str, Any], driver_ok: bool | None = None,
         return True
     # No RTL-SDR plugged in: nothing for dump1090 to open. It is launched again
     # the moment one shows up.
-    if sdr_present is False:
+    if source == "rtlsdr" and sdr_present is False:
         return False
     # Launched regardless of the driver check, which can be flaky: without
     # WinUSB dump1090 exits immediately and the next backoff window retries, so
@@ -418,12 +548,13 @@ def ensure_decoder(cfg: dict[str, Any], driver_ok: bool | None = None,
             return False
         exe = find_dump1090(cfg.get("dump1090_exe", ""))
         if not exe:
+            start_install()   # an SDR with no decoder: fetch it, launch on a later poll
             return False
         _last_launch_attempt = now
         _kill_stray_decoders()   # clear any stuck/orphan instance first
         _prune_decoder_logs(Path(exe).parent)
-        _apply_decoder_cfg(exe, receiver_home(cfg), cfg.get("dump1090_gain"))
-        return launch_dump1090(exe, cfg.get("dump1090_args", "--net"))
+        _apply_decoder_cfg(exe, receiver_home(cfg), cfg.get("dump1090_gain"), rate)
+        return launch_dump1090(exe, args)
 
 
 def collect(cfg: dict[str, Any]) -> dict[str, Any] | None:

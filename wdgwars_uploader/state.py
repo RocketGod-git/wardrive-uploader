@@ -35,6 +35,8 @@ class LiveState:
         # Device presence / health
         self.devices: dict[str, Any] = {
             "rtlsdr": {"present": False, "label": "", "driver_ok": None},
+            "hackrf": {"present": False, "label": "", "state": "", "error": "",
+                       "msps": 0.0, "no_signal": False, "firmware": ""},
             "portapack": {"present": False, "port": "", "label": "", "connected": False,
                           "device": "", "error": "", "aircraft": 0},
             "mesh": {"present": False, "port": "", "connected": False,

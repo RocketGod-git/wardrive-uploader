@@ -23,7 +23,7 @@ from pathlib import Path
 import pystray
 from PIL import Image, ImageDraw
 
-from . import APP_NAME, __version__, adsb, autostart, mayhem, traymenu, updater, watchdog
+from . import APP_NAME, __version__, adsb, autostart, hackrf, mayhem, traymenu, updater, watchdog
 from .config import Config, INTERVAL_CHOICES_HOURS, config_dir, mesh_devices
 from .core import UploaderCore
 from .logutil import setup_logging
@@ -285,15 +285,8 @@ class UploaderApp:
             threading.Thread(target=wardrift.sign_out, args=(token,), daemon=True).start()
 
     def install_dump1090_async(self) -> None:
-        def work():
-            try:
-                exe = adsb.install_dump1090(progress=lambda m: self.state.event(f"dump1090: {m}"))
-                self.state.event(f"dump1090 ready: {exe}")
-                self.core.poll_devices()
-            except Exception as e:
-                self.state.event(f"dump1090 install failed: {e}")
-                log.exception("dump1090 install failed")
-        threading.Thread(target=work, daemon=True).start()
+        adsb.start_install(force=True)
+        self.core.poll_devices()   # the check shows "downloading" right away
 
     def open_dashboard(self) -> None:
         url = self.server.url
@@ -333,7 +326,7 @@ class UploaderApp:
         except Exception:
             pass
         for stopper in (self.scheduler.stop, self.poller.stop, self.core.stop_mesh, self.core.wardriver.stop,
-                        self.server.stop, adsb.stop_dump1090, mayhem.stop):
+                        self.server.stop, adsb.stop_dump1090, mayhem.stop, hackrf.stop_bridge):
             try:
                 stopper()
             except Exception:
