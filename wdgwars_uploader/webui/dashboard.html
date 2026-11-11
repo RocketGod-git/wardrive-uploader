@@ -23,7 +23,9 @@
   box-shadow:0 0 8px rgba(0,229,255,.6),inset 0 0 4px rgba(0,229,255,.6)}
 ::-webkit-scrollbar-corner{background:transparent}
 html,body{margin:0;min-height:100%}
-html{background:var(--bg)}
+html{background:var(--bg);scrollbar-gutter:stable}
+/* while a modal is up the page behind it stays put: no wheel, drag or key scrolling leaks through */
+html.locked,html.locked body{overflow:hidden}
 body{
   background:var(--bg);
   color:var(--txt);
@@ -330,11 +332,11 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
 .feed tr{cursor:pointer}
 .feed tr:hover td{background:rgba(0,229,255,.06)}
 .modal{position:fixed;inset:0;z-index:60;background:rgba(2,4,7,.72);backdrop-filter:blur(4px);
-  display:none;align-items:center;justify-content:center}
+  display:none;align-items:center;justify-content:center;overscroll-behavior:contain}
 .modal.show{display:flex;animation:fade .2s ease}
 @keyframes fade{from{opacity:0}to{opacity:1}}
 .sheet{width:420px;max-width:94vw;max-height:88vh;overflow:auto;background:linear-gradient(180deg,#0b1119,#070b11);
-  border:1px solid var(--cyan);border-radius:14px;box-shadow:0 0 40px rgba(0,229,255,.25);position:relative}
+  border:1px solid var(--cyan);border-radius:14px;box-shadow:0 0 40px rgba(0,229,255,.25);position:relative;overscroll-behavior:contain}
 .sheet.mag{border-color:var(--mag);box-shadow:0 0 40px rgba(255,45,149,.25)}
 .sheet .hd{padding:16px 18px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#0b1119ee;backdrop-filter:blur(6px)}
 .sheet .hd h2{margin:0;font-size:20px;letter-spacing:1px;color:var(--cyan);text-transform:none}
@@ -1409,11 +1411,11 @@ async function saveSettings(m){
   else{m.textContent="✗ "+(r.error||"error");m.className="msg err";}
 }
 // ---- detail modals ----
-function closeModal(){ $("#modal").classList.remove('show'); }
+function closeModal(){ $("#modal").classList.remove('show'); document.documentElement.classList.remove('locked'); }
 function openModal(html, mag){
   const sh=$("#sheet"); sh.className='sheet'+(mag?' mag':''); sh.style.width='';
   sh.innerHTML=`<span class="x" onclick="closeModal()">×</span>`+html;
-  $("#modal").classList.add('show');
+  $("#modal").classList.add('show'); document.documentElement.classList.add('locked');
 }
 const AC_CAT={a0:'—',a1:'Light',a2:'Small',a3:'Large',a4:'Large (high-vortex)',a5:'Heavy',a6:'High-performance',
   a7:'Rotorcraft',b1:'Glider',b2:'Lighter-than-air',b3:'Parachutist',b4:'Ultralight',b6:'UAV',b7:'Space',
