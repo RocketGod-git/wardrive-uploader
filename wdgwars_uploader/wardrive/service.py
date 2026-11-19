@@ -43,15 +43,34 @@ from .sdimport import ImportResult, SdImport
 log = logging.getLogger("wdgwars.wardrive")
 
 SCAN_EVERY = 4.0
-MOVE_M = 25.0            # a new row once a network is heard this far from its last row
-STRONGER_DB = 6          # or this much stronger (after MIN_GAP_S)
-MIN_GAP_S = 10.0
 FIX_MATCH_S = 1.5        # how close in time a fix must be to the sighting
 RECENT_S = 72 * 3600     # WDGWars and Wardrift only take recent rows
 WDGW_RESEND_S = 3600
 TARGETS = ("wigle", "wdgwars", "wardrift")
 CSV_COLUMNS = ("MAC,SSID,AuthMode,FirstSeen,Channel,Frequency,RSSI,CurrentLatitude,"
                "CurrentLongitude,AltitudeMeters,AccuracyMeters,RCOIs,MfgrId,Type")
+
+
+class TrackRule:
+    """WiGLE's rule for when a network heard again gets another row, the same as the
+    phone apps: the first sighting, a move of more than 0.001 degrees from its last row,
+    more than 0.0001 degrees once an hour has passed, or a signal 5 dB above its best so
+    far. Anything else is the same spot again. Sightings must come in time order."""
+
+    def __init__(self) -> None:
+        self._last: dict[str, list[float]] = {}   # mac -> [lat, lon, time, best rssi]
+
+    def worthy(self, mac: str, lat: float, lon: float, t: float, rssi: int) -> bool:
+        p = self._last.get(mac)
+        if p is None:
+            self._last[mac] = [lat, lon, t, rssi]
+            return True
+        d = max(abs(lat - p[0]), abs(lon - p[1]))
+        ok = d > 0.001 or (d > 0.0001 and t - p[2] > 3600) or rssi - p[3] >= 5
+        if ok:
+            p[0], p[1], p[2] = lat, lon, t
+        p[3] = max(p[3], rssi)
+        return ok
 
 
 def _dist_m(a: tuple[float, float], b: tuple[float, float]) -> float:
@@ -158,7 +177,7 @@ class Wardriver:
         self.run_name = time.strftime("run-%Y%m%d-%H%M%S.jsonl")
         self.live_wifi: list[dict[str, Any]] = []
         self.live_ble: list[dict[str, Any]] = []
-        self._last_row: dict[str, tuple[float, float, int, float]] = {}
+        self._track = TrackRule()
         self.run_wifi: set[str] = set()
         self.run_ble: set[str] = set()
         self.new_wifi = self.new_ble = 0
@@ -342,14 +361,8 @@ class Wardriver:
                 if fix is None:
                     continue
                 mac = it["mac"]
-                pos = (fix.lat, fix.lon)
-                prev = self._last_row.get(mac)
-                if prev is not None:
-                    moved = _dist_m(prev[:2], pos)
-                    stronger = it["rssi"] >= prev[2] + STRONGER_DB and it["utc"] - prev[3] >= MIN_GAP_S
-                    if moved < MOVE_M and not stronger:
-                        continue
-                self._last_row[mac] = (fix.lat, fix.lon, it["rssi"], it["utc"])
+                if not self._track.worthy(mac, fix.lat, fix.lon, it["utc"], it["rssi"]):
+                    continue
                 rows.append({
                     "mac": mac, "ssid": it.get("ssid") if kind == "WIFI" else it.get("name"),
                     "auth": it.get("auth", ""), "t": round(it["utc"], 3),
@@ -399,6 +412,14 @@ class Wardriver:
         upload sends them like any other run."""
         if not rows:
             return ImportResult(0, 0, 0)
+        # A board logs every network on every scan (a parked board writes thousands of rows
+        # per network a day). Its rows go through the same WiGLE rule as our own scans
+        # before they're saved for upload. Every row still counts for the network tallies.
+        keep = TrackRule()
+        sendable = [r for r in rows if r.get("lat") is None or r.get("lon") is None
+                    or keep.worthy(r["mac"], r["lat"], r["lon"], r["t"], r.get("rssi") if r.get("rssi") is not None else -100)]
+        if len(sendable) < len(rows):
+            log.info("SD import from %s: %d of %d rows kept by the WiGLE track rule", label, len(sendable), len(rows))
         new = 0
         new_wifi: list[str] = []
         new_ble: list[str] = []
@@ -417,13 +438,13 @@ class Wardriver:
                     (new_wifi if wifi else new_ble).append(f"{n:012x}")
             self.new_wifi += len(new_wifi)
             self.new_ble += len(new_ble)
-            self.rows += len(rows)
-            self.sd_rows += len(rows)
+            self.rows += len(sendable)
+            self.sd_rows += len(sendable)
             name = time.strftime("sd-%Y%m%d-%H%M%S") + f"-{int(time.time() * 1000) % 1000:03d}.jsonl"
             with open(self.dir / name, "w", encoding="utf-8") as f:
-                for r in rows:
+                for r in sendable:
                     f.write(json.dumps(r, ensure_ascii=False, separators=(",", ":")) + "\n")
-            self.index["runs"][name] = {"rows": len(rows), "source": label}
+            self.index["runs"][name] = {"rows": len(sendable), "source": label}
         self._save_index()
         if count_as:
             self.boards.count_collected(count_as, rows)

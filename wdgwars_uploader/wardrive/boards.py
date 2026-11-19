@@ -349,6 +349,10 @@ class _Session:
         self.sd_card = False
         self.clock_sent = False
         self.sd_src: "BoardSdSource | None" = None
+        # Sending its SD card: scanning stopped for the copy so the board's memory goes to
+        # the transfer (a board capturing while it sends dropped under 1 KB free and stopped
+        # answering chunks). Out of the channel plan meanwhile; the others cover its channels.
+        self.sd_hold = False
 
 
 class BoardSdSource:
@@ -1051,7 +1055,7 @@ class BoardBridge(_Listener):
                 s.t.resubscribe()
                 if s.ready:
                     self._send(s, "caps")
-            elif ph == LINKED and s.ready and now - s.since > 20:
+            elif ph == LINKED and s.ready and now - s.since > 20 and not s.sd_hold:
                 if s.nudged_at and now - s.nudged_at < nudge_every:
                     continue
                 s.nudged_at = now
@@ -1264,7 +1268,7 @@ class BoardBridge(_Listener):
     def _decide_plans(self) -> None:
         for s in self.sessions.values():
             s.want_plan, s.want_all = None, False
-        live = [s for s in self.sessions.values() if s.info.splittable and s.ready and not s.info.foreign]
+        live = [s for s in self.sessions.values() if s.info.splittable and s.ready and not s.info.foreign and not s.sd_hold]
         for sid in list(self.plan_slot):
             if sid not in self.sessions:
                 del self.plan_slot[sid]
@@ -1349,7 +1353,7 @@ class BoardBridge(_Listener):
             log.exception("WardriveESP plan failed")
 
     def _needs_send(self, s: _Session) -> bool:
-        if not s.ready or s.info.foreign:
+        if not s.ready or s.info.foreign or s.sd_hold:
             return False
         if s.info.bt_wanted != s.bt_commanded or s.info.cap_wanted != s.cap_commanded:
             return True
@@ -1648,12 +1652,18 @@ class BoardBridge(_Listener):
         def stop() -> bool:
             return not src.linked
 
+        def on_turn() -> None:
+            # Our turn: stop the scan and give the board a moment to send what it had
+            # queued, so its memory goes to the copy. Boards waiting their turn keep scanning.
+            self.post(lambda: self._sd_pause(s))
+            time.sleep(2.0)
+
         def run() -> None:
             try:
                 files = sd.find_new(src, stop)
                 if files:
                     sd.offer(src, files)
-                    while src.linked and not sd.try_transfer(src, files, stop):
+                    while src.linked and not sd.try_transfer(src, files, stop, on_turn):
                         time.sleep(0.5)
                     key = s.info.key
                     self.post(lambda: self.sd_taken.__setitem__(key, self.sd_taken.get(key, 0) + len(files)))
@@ -1665,8 +1675,31 @@ class BoardBridge(_Listener):
                 def done() -> None:
                     if s.sd_src is src:
                         s.sd_src = None
+                    self._sd_resume(s)
                 self.post(done)
         threading.Thread(target=run, name=f"sd-{s.info.tag}", daemon=True).start()
+
+    def _sd_pause(self, s: _Session) -> None:
+        """The copy's turn came: stop the board's scan and take it out of the plan."""
+        if self.sessions.get(s.t.id) is not s or not s.ready or s.sd_hold:
+            return
+        s.sd_hold = True
+        self._send(s, "stop")
+        s.sent_plan = None
+        s.info.share = []
+        self._log(f"{s.info.name}: scanning paused while it sends its SD card (frees the board's memory for the copy)")
+        self._schedule_plan(0)
+
+    def _sd_resume(self, s: _Session) -> None:
+        """The copy ended (sent, failed or the link dropped): scanning again."""
+        if not s.sd_hold:
+            return
+        s.sd_hold = False
+        if self.sessions.get(s.t.id) is s and s.ready:
+            self._log(f"{s.info.name}: SD card done, scanning again")
+            self._restart_stream(s)
+        else:
+            self._schedule_plan(0)
 
     # ---- other devices (Biscuit, Marauder, GhostESP, Flipper) -----------------
     def feed_ap(self, bssid: str, ssid: str, rssi: int, channel: int | None, caps: str | None, source: str,

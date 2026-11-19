@@ -260,12 +260,16 @@ class SdImport:
                 return
         log.info("SD import: %s gone before the copy, retries %s", src.device_label, src.next_time)
 
-    def try_transfer(self, src: FileSource, files: list[RemoteFile], stop: Callable[[], bool]) -> bool:
+    def try_transfer(self, src: FileSource, files: list[RemoteFile], stop: Callable[[], bool],
+                     on_turn: Callable[[], None] | None = None) -> bool:
         """Copy and import ``files`` if no other device is copying now (False: try again
-        later). Runs on the device's own thread."""
+        later). Runs on the device's own thread. ``on_turn`` runs once the turn is ours,
+        before the first read (a board pauses its scan there)."""
         if not self._turn.acquire(blocking=False):
             return False
         try:
+            if on_turn is not None:
+                on_turn()
             self._transfer(src, files, stop)
         finally:
             with self._lock:
