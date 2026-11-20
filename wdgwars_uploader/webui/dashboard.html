@@ -356,6 +356,13 @@ select:focus,input:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8p
   border-radius:8px;padding:7px 14px;text-decoration:none;font-size:12px}
 .sheet .maplink:hover{background:rgba(0,229,255,.1)}
 .sheet .spin{color:var(--muted);font-size:12px;padding:8px 0}
+.sheet .sdr{margin-bottom:12px}
+.sheet .sdf{padding:9px 0;border-bottom:1px dashed var(--line);font-size:12px;line-height:1.6;color:#dfe}
+.sheet .sdf b{color:var(--cyan)} .sheet .sdf .muted{color:var(--muted)}
+.sheet .sdf .warn{color:var(--wd)} .sheet .sdf .bad{color:var(--mag)}
+.sheet .sddis{display:block;width:100%;margin-top:14px;padding:10px;border-radius:8px;border:1px solid var(--cyan);
+  background:rgba(0,229,255,.12);color:var(--cyan);font-weight:700;letter-spacing:1px;cursor:pointer}
+.sheet .sddis:hover{background:rgba(0,229,255,.22)}
 .tag2{display:inline-block;padding:2px 10px;border-radius:20px;font-size:11px;border:1px solid currentColor}
 .updbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:-4px 0 16px;padding:10px 16px;border-radius:12px;
   border:1px solid rgba(255,226,0,.45);background:linear-gradient(90deg,rgba(255,226,0,.12),rgba(255,57,255,.07) 60%,transparent);
@@ -1047,6 +1054,7 @@ function renderFleet(w,off){
     const L=sd.live, pct=L.total?Math.floor(L.done*100/L.total):0, more=(sd.waiting||[]).filter(x=>x!==L.device);
     h+=`<div class="fsd"><span class="ico">⇩ SD</span>${escHtml(L.device)} · ${escHtml(L.file)}${L.count>1?` · ${L.index} of ${L.count}`:''}<span class="bar"><i style="width:${pct}%"></i></span>${pct}% · ${Math.round(L.bps/1024)} KB/s${more.length?` · then ${escHtml(more.join(', '))}`:''}</div>`;
   } else if(sd.last) h+=`<div class="fsd"><span class="ico">⇩ SD</span>${escHtml(sd.last)}</div>`;
+  sdReport(sd.reports);
   const cards=espOff?[]:[...boards.map(b=>boardCard(b,off,sd)),...bisc.map(o=>otherCard(o,off,sd))];
   for(const id of off) if(id.startsWith('esp:')&&!boards.some(b=>b.id===id)&&!away.some(n=>n.id===id))
     cards.push(devCard({id,name:'WardriveESP-'+id.slice(4),sub:'off on this PC',off:true,sw:true}));
@@ -1433,7 +1441,7 @@ async function saveSettings(m){
   else{m.textContent="✗ "+(r.error||"error");m.className="msg err";}
 }
 // ---- detail modals ----
-function closeModal(){ $("#modal").classList.remove('show'); document.documentElement.classList.remove('locked'); }
+function closeModal(){ $("#modal").classList.remove('show'); delete $("#modal").dataset.sd; document.documentElement.classList.remove('locked'); }
 function openModal(html, mag){
   const sh=$("#sheet"); sh.className='sheet'+(mag?' mag':''); sh.style.width='';
   sh.innerHTML=`<span class="x" onclick="closeModal()">×</span>`+html;
@@ -1540,6 +1548,44 @@ $("#modal").addEventListener('click',e=>{ if(e.target.id==='modal') closeModal()
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeModal(); });
 
 // ---- mesh device list editor ----
+// SD card imports: a popup with every file's breakdown, up until DISMISS (the id it saw is kept, so a
+// report the user hasn't dismissed comes back after a reload; a newer one opens on its own).
+let _sdShown=0;
+function sdSeen(){ try{ return +localStorage.getItem('sdReportSeen')||0; }catch(e){ return _sdShown; } }
+function sdDismiss(id){ try{ localStorage.setItem('sdReportSeen',String(id)); }catch(e){} _sdShown=id; closeModal(); }
+function sdSpan(a,b){
+  if(!a) return '';
+  const A=new Date(a*1000), B=new Date(b*1000), t={hour:'numeric',minute:'2-digit'};
+  const same=A.toDateString()===B.toDateString();
+  return A.toLocaleDateString([], {month:'short',day:'numeric'})+' · '+A.toLocaleTimeString([],t)+' to '
+    +(same?'':B.toLocaleDateString([], {month:'short',day:'numeric'})+' ')+B.toLocaleTimeString([],t);
+}
+function sdFileHtml(f){
+  if(f.status!=='ok') return `<div class="sdf"><b>${escHtml(f.name)}</b><div class="${f.status==='failed'?'bad':'warn'}">${f.status==='failed'?'Failed':'Skipped'} · ${escHtml(f.why||'')}</div></div>`;
+  const pl=(n,w)=>`${fmt(n)} ${w}${n===1?'':'s'}`;
+  const split=[f.new_wifi?fmt(f.new_wifi)+' Wi-Fi':'',f.new_ble?fmt(f.new_ble)+' Bluetooth':''].filter(Boolean).join(', ');
+  const lines=[
+    sdSpan(f.start,f.end),
+    pl(f.rows,'row')+(f.wifi?' · '+fmt(f.wifi)+' Wi-Fi':'')+(f.ble?' · '+fmt(f.ble)+' Bluetooth':''),
+    pl(f.devices,'device')+' · '+fmt(f.new)+' new'+(split?' ('+split+')':''),
+    (f.kept?pl(f.kept,'row')+' queued for upload':'nothing new to upload')+(f.same_spot?' · '+fmt(f.same_spot)+' same spot again':''),
+    f.left_out?fmt(f.left_out)+' damaged rows skipped':''].filter(Boolean);
+  return `<div class="sdf"><b>${escHtml(f.name)}</b> <span class="muted">${fmtBytes(f.bytes)}${f.seconds?' in '+Math.round(f.seconds)+' s':''}</span>`
+    +lines.map(l=>`<div>${escHtml(l)}</div>`).join('')+'</div>';
+}
+function sdReport(reports){
+  const seen=Math.max(sdSeen(),_sdShown), fresh=(reports||[]).filter(r=>r.id>seen);
+  if(!fresh.length) return;
+  const top=fresh[fresh.length-1].id, m=$("#modal");
+  if(m.classList.contains('show')){ if(m.dataset.sd===String(top)) return; if(!m.dataset.sd) return; }
+  const files=fresh.reduce((n,r)=>n+r.files.length,0);
+  openModal(`<div class="hd"><h2>SD card import</h2><div class="sub">${fmt(files)} file${files===1?'':'s'} · ${escHtml([...new Set(fresh.map(r=>r.device))].join(', '))}</div></div>`
+    +`<div class="bd">${fresh.map(r=>`<div class="sdr"><div class="sec">${escHtml(r.device)} · ${new Date(r.at*1000).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}</div>${r.files.map(sdFileHtml).join('')}</div>`).join('')}`
+    +`<button class="sddis" onclick="sdDismiss(${top})">DISMISS</button></div>`);
+  m.dataset.sd=String(top);
+  const x=$("#sheet .x"); if(x) x.onclick=()=>sdDismiss(top);
+}
+
 function escHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 // Options for a mesh device's port picker. A saved port that is not plugged in
 // stays selectable; "auto" picks the first mesh port.

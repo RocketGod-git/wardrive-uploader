@@ -420,6 +420,8 @@ class Wardriver:
                     or keep.worthy(r["mac"], r["lat"], r["lon"], r["t"], r.get("rssi") if r.get("rssi") is not None else -100)]
         if len(sendable) < len(rows):
             log.info("SD import from %s: %d of %d rows kept by the WiGLE track rule", label, len(sendable), len(rows))
+        n_wifi = sum(1 for r in rows if r.get("type", "WIFI") == "WIFI")
+        times = [r["t"] for r in rows if isinstance(r.get("t"), (int, float))]
         new = 0
         new_wifi: list[str] = []
         new_ble: list[str] = []
@@ -455,7 +457,10 @@ class Wardriver:
                         fh.write("\n".join(items) + "\n")
                 except OSError:
                     pass
-        return ImportResult(len(rows), new, 0)
+        return ImportResult(len(rows), new, 0, wifi=n_wifi, ble=len(rows) - n_wifi,
+                            devices=len({r["mac"] for r in rows}), new_wifi=len(new_wifi), new_ble=len(new_ble),
+                            kept=len(sendable), same_spot=len(rows) - len(sendable),
+                            start=min(times) if times else 0.0, end=max(times) if times else 0.0)
 
     # -- handshake and PMKID captures ------------------------------------------------
     def _load_captures(self) -> dict[str, dict[str, Any]]:

@@ -22,7 +22,7 @@ import json
 import logging
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
@@ -140,6 +140,21 @@ class ImportResult:
     rows: int
     new: int
     left_out: int
+    # The file's detail for the dashboard's SD report: Wi-Fi / Bluetooth rows, distinct and new devices
+    # by kind, rows kept for upload and rows that were the same spot again (the WiGLE rule), the time
+    # span (epoch seconds), and the copy itself (filled in by the transfer).
+    wifi: int = 0
+    ble: int = 0
+    devices: int = 0
+    new_wifi: int = 0
+    new_ble: int = 0
+    kept: int = 0
+    same_spot: int = 0
+    start: float = 0.0
+    end: float = 0.0
+    name: str = ""
+    bytes: int = 0
+    seconds: float = 0.0
 
 
 class SdImport:
@@ -155,6 +170,9 @@ class SdImport:
         self.waiting: dict[str, str] = {}          # device key -> label, offered and not finished
         self.live: dict[str, Any] | None = None     # the file being copied now
         self.last = ""                              # the last finished import, one line
+        # Finished imports, newest last, each with every file's breakdown. The dashboard shows the
+        # ones newer than what the user dismissed (it keeps that id), so a report waits until seen.
+        self.reports: list[dict[str, Any]] = []
         self._data = self._load()
 
     # -- record of handled files ------------------------------------------------
@@ -280,6 +298,7 @@ class SdImport:
 
     def _transfer(self, src: FileSource, files: list[RemoteFile], stop: Callable[[], bool]) -> None:
         imported = rows = new = skipped = failed = 0
+        detail: list[dict[str, Any]] = []
         for n, f in enumerate(files, 1):
             if stop():
                 break
@@ -298,10 +317,13 @@ class SdImport:
                     skipped += 1
                     self._mark("seen", [self._entry(src, f)])
                     log.info("SD import: %s isn't a WiGLE CSV, skipped", f.path)
+                    detail.append({"name": f.name, "status": "skipped", "why": "not a WiGLE CSV, left on the card"})
                     continue
                 parsed, left = parse_wigle_csv(data)
                 r = self.importer(parsed, f"{src.device_label} {f.name}", getattr(src, "count_as", None))
                 r.left_out += left
+                r.name, r.bytes, r.seconds = f.name, len(data), round(time.monotonic() - t0, 1)
+                detail.append({"status": "ok", **asdict(r)})
                 imported += 1
                 rows += r.rows
                 new += r.new
@@ -322,9 +344,11 @@ class SdImport:
                 skipped += 1
                 self._mark("seen", [self._entry(src, f)])
                 log.info("SD import: %s: %s", f.path, e)
+                detail.append({"name": f.name, "status": "skipped", "why": f"{e}, left on the card"})
             except Exception as e:  # noqa: BLE001 - link lost, unplugged
                 failed += 1
                 log.info("SD import: %s failed: %s", f.path, e)
+                detail.append({"name": f.name, "status": "failed", "why": f"{e}, retries {src.next_time}"})
                 if stop():
                     break
         parts = [f"imported {imported} file{'s' if imported != 1 else ''}", f"{rows:,} rows", f"{new:,} new network{'s' if new != 1 else ''}"]
@@ -333,11 +357,16 @@ class SdImport:
         if failed:
             parts.append(f"{failed} failed, retries {src.next_time}")
         self.last = f"{src.device_label}: " + " · ".join(parts)
+        if detail:
+            with self._lock:
+                self.reports.append({"id": int(time.time() * 1000), "device": src.device_label,
+                                     "at": time.time(), "summary": self.last, "files": detail})
+                del self.reports[:-10]
         if len(files) > 1 or skipped or failed:
             self.on_event(self.last)
 
     def status(self) -> dict[str, Any]:
         with self._lock:
             return {"waiting": list(self.waiting.values()), "live": dict(self.live) if self.live else None,
-                    "last": self.last}
+                    "last": self.last, "reports": list(self.reports)}
 
