@@ -6,5 +6,5 @@ PortaPack/Mayhem, and nodes from MeshCore and Meshtastic radios, and uploads
 them to WiGLE, WDGWars and Wardrift.
 """
 
-__version__ = "0.6.8"
+__version__ = "0.6.9"
 APP_NAME = "Wardrive Uploader"
