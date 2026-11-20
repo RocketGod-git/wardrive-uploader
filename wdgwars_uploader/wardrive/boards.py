@@ -349,6 +349,7 @@ class _Session:
         self.sd_card = False
         self.clock_sent = False
         self.sd_src: "BoardSdSource | None" = None
+        self.boot_seen = False   # WD:BOOT came on this link (1.2.2+): a BEGIN without CAPS isn't old firmware
         # Sending its SD card: scanning stopped for the copy so the board's memory goes to
         # the transfer (a board capturing while it sends dropped under 1 KB free and stopped
         # answering chunks). Out of the channel plan meanwhile; the others cover its channels.
@@ -1756,11 +1757,17 @@ class BoardBridge(_Listener):
                 self._schedule_plan()
             return
         if line.startswith("WD:BEGIN"):
-            if s.info.fw is None and P.is_board_name(s.info.name):
+            # Pre-1.1 boards begin without WD:CAPS. Not one that sent WD:BOOT (1.2.2+): its caps line was lost on a busy
+            # link (field 2026-11-20: a 1.7.8 board was called older than 1.1).
+            if s.info.fw is None and not s.boot_seen and P.is_board_name(s.info.name):
                 s.info.legacy = True
             s.info.phase = STREAMING
             self._dirty = True
         elif line.startswith("WD:BOOT "):
+            s.boot_seen = True
+            if s.info.legacy:
+                s.info.legacy = False
+                self._dirty = True
             self._check_crash_loop(s, line)
         elif line.startswith("WD:STATUS") and "temp=" in line:
             self._note_temp(s, P.key_values(line, "WD:STATUS"))
