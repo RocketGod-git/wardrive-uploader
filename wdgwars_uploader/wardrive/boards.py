@@ -164,10 +164,30 @@ class BleLink:
         self._q: collections.deque = collections.deque()
         self._writing = False
         self._cid = 1
+        self._fast = None   # Windows' throughput-optimized link request while an SD copy runs
 
     def open(self, listener: _Listener) -> None:
         self.listener = listener
         self.bridge.loop.create_task(self._connect())
+
+    def fast_link(self, on: bool) -> None:
+        """Ask Windows for a throughput-optimized link (short connection interval) while this board copies its SD runs,
+        and hand it back after. The board asks for one itself, but Windows turns a board's request down (status 554)
+        and keeps 45 ms with several boards linked: asked from the PC, a copy ran at 94 KB/s instead of 42 (bench
+        2026-11-20, three other boards streaming). Windows 11 only; elsewhere nothing changes."""
+        try:
+            if on and self._fast is None and self.client is not None:
+                from winrt.windows.devices.bluetooth import BluetoothLEPreferredConnectionParameters as PCP
+                dev = getattr(getattr(self.client, "_backend", None), "_requester", None)
+                if dev is not None:
+                    self._fast = dev.request_preferred_connection_parameters(PCP.throughput_optimized)
+                    log.info("%s: fast link asked (%s)", self.name, getattr(self._fast, "status", "?"))
+            elif not on and self._fast is not None:
+                req, self._fast = self._fast, None
+                req.close()
+        except Exception as e:  # noqa: BLE001 - older Windows, no WinRT API, link gone
+            log.info("%s: fast link unavailable (%s)", self.name, str(e)[:80] or type(e).__name__)
+            self._fast = None
 
     async def _connect(self) -> None:
         from bleak import BleakClient
@@ -1815,6 +1835,8 @@ class BoardBridge(_Listener):
                 paused[0] = True
                 BLE.pause_scans()
                 self.post(self._maintain_fallback)
+                if hasattr(s.t, "fast_link"):
+                    self.post(lambda: s.t.fast_link(True))
             time.sleep(2.0)
 
         def run() -> None:
@@ -1832,6 +1854,8 @@ class BoardBridge(_Listener):
                 if paused[0]:
                     paused[0] = False
                     BLE.resume_scans()
+                    if hasattr(s.t, "fast_link"):
+                        self.post(lambda: s.t.fast_link(False))
                 sd.withdraw(src)
 
                 def done() -> None:
