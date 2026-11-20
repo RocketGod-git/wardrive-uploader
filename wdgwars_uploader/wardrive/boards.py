@@ -377,7 +377,10 @@ class BoardSdSource:
     next_time = "next link"
 
     def __init__(self, device_key: str, device_label: str, post: Callable[[str], None],
-                 chunk: int = CHUNK, inflight: int = INFLIGHT) -> None:
+                 chunk: int = CHUNK, inflight: int = INFLIGHT, stream: bool = False) -> None:
+        self.stream = stream          # firmware 1.7.9+ over Bluetooth: `sd stream` instead of `sd read`s
+        self.streaming = False
+        self.events: queue.Queue = queue.Queue()
         self.chunk = chunk
         self.inflight = inflight
         self.device_key = device_key
@@ -442,6 +445,8 @@ class BoardSdSource:
 
     def read(self, f: RemoteFile, out: io.BufferedIOBase, on_bytes: Callable[[int], None]) -> int:
         self._clear()
+        if self.stream:
+            return self._read_stream(f, out, on_bytes)
         ready: dict[int, bytes] = {}
         asked: dict[int, float] = {}
         tries: dict[int, int] = {}
@@ -506,6 +511,110 @@ class BoardSdSource:
                 have += len(b)
             on_bytes(have)
         return have
+
+    # ---------------- `sd stream` (firmware 1.7.9+, Bluetooth) ----------------
+
+    Z_PIECE = 16384           # bytes per deflated piece (the board's SD_Z_PIECE)
+    STREAM_SILENCE_S = 4.0    # a quiet stream is asked again after this long
+    STREAM_ASKS = 200         # asks for one file before it counts as failed (a far link may stall often)
+
+    def offer(self, line: str) -> None:
+        """A `WD:SD` line from the bridge."""
+        self.lines.put(line)
+        if self.streaming:
+            self.events.put(line)
+
+    def offer_file(self, kind: int, last: bool, off: int, data: bytes) -> None:
+        """A file frame from the bridge."""
+        if self.streaming:
+            self.events.put((kind == P.T_FILEZ, last, off, data))
+
+    def _read_stream(self, f: RemoteFile, out: io.BufferedIOBase, on_bytes: Callable[[int], None]) -> int:
+        """The run pushed by the board: `sd stream <file> <have> z`, frames in order until `WD:SD end`. Anything out of
+        order (a frame lost on a far or busy link), `WD:SD stopped`, or 4 s of silence: ask again from what we have
+        (whole pieces only). The CRC in `WD:SD end` covers the bytes since the last ask."""
+        state = {"have": 0, "asks": 0, "crc": 0, "last": time.monotonic()}
+        zbuf = bytearray()
+
+        def ask(why: str | None) -> None:
+            state["asks"] += 1
+            if state["asks"] > self.STREAM_ASKS:
+                raise OSError(f"{f.name}: stream stopped {state['asks']} times")
+            if why:
+                log.info("%s SD: %s stream %s at %d, asking from there", self.device_label, f.name, why, state["have"])
+            while True:
+                try:
+                    self.events.get_nowait()
+                except queue.Empty:
+                    break
+            zbuf.clear()
+            state["crc"] = 0
+            state["last"] = time.monotonic()
+            if not self._send(f"sd stream {f.name} {state['have']} z"):
+                raise OSError("link gone")
+
+        def write(b: bytes) -> None:
+            out.write(b)
+            state["crc"] = zlib.crc32(b, state["crc"])
+            state["have"] += len(b)
+            on_bytes(state["have"])
+
+        self.streaming = True
+        try:
+            ask(None)
+            while True:
+                if not self.linked:
+                    raise OSError(f"link gone at {state['have']} of {f.size} bytes")
+                try:
+                    e = self.events.get(timeout=0.25)
+                except queue.Empty:
+                    if time.monotonic() - state["last"] > self.STREAM_SILENCE_S:
+                        ask("went quiet")
+                    continue
+                state["last"] = time.monotonic()
+                have = state["have"]
+                if isinstance(e, tuple):
+                    z, last, off, data = e
+                    if off < have and not zbuf:
+                        continue                     # from before the last ask
+                    if off != have:
+                        ask("skipped ahead")
+                        continue
+                    if not z:
+                        write(data)
+                        continue
+                    zbuf += data
+                    if not last:
+                        continue
+                    try:
+                        raw = zlib.decompressobj(-15).decompress(bytes(zbuf))
+                    except zlib.error:
+                        raw = b""
+                    zbuf.clear()
+                    if len(raw) != min(self.Z_PIECE, f.size - off):
+                        ask("damaged")
+                        continue
+                    write(raw)
+                elif e.startswith("WD:SD end "):
+                    k = self._kv(e)
+                    try:
+                        crc_ok = int(k.get("crc", ""), 16) == state["crc"]
+                    except ValueError:
+                        crc_ok = False
+                    if have == f.size and crc_ok:
+                        return have
+                    if have < f.size:
+                        ask("ended early")
+                        continue
+                    raise OSError(f"{f.name}: CRC didn't match after the stream")
+                elif e.startswith("WD:SD stopped"):
+                    ask(self._kv(e).get("reason") or "stopped")
+                elif e.startswith("WD:SD err"):
+                    raise OSError(e[6:])
+        finally:
+            self.streaming = False
+            if self.linked and state["have"] < f.size:
+                self._send("sd stop")
 
     def taken(self, f: RemoteFile) -> bool:
         """The run is imported: the board may delete it now. False = still on the card
@@ -1450,7 +1559,12 @@ class BoardBridge(_Listener):
                 return
             kind = b[3]
             payload = bytes(b[P.HEADER:frame])
+            flags, fid = b[5], b[6] | (b[7] << 8) | (b[8] << 16) | (b[9] << 24)
             del b[:frame]
+            if kind in (P.T_FILE, P.T_FILEZ):   # an SD run streaming in: straight to the copy
+                if s.sd_src is not None:
+                    s.sd_src.offer_file(kind, bool(flags & 1), fid, payload)
+                continue
             if kind == P.T_DATA:
                 s.line_buf += payload
                 self._drain_lines(s)
@@ -1490,12 +1604,12 @@ class BoardBridge(_Listener):
         # hand that part to the copy, so only the damaged line before it is asked again.
         j = line.rfind("WD:SD data ")
         if j > 0 and s.sd_src is not None:
-            s.sd_src.lines.put(line[j:])
+            s.sd_src.offer(line[j:])
             return
         if line.startswith("WD:SD "):
             # Offline runs: replies for the import taking them; file chunks stay out of the log.
             if s.sd_src is not None:
-                s.sd_src.lines.put(line)
+                s.sd_src.offer(line)
             if not line.startswith("WD:SD data "):
                 log.info("WardriveESP: [%s] %s", s.info.tag, line[:160])
             return
@@ -1669,7 +1783,8 @@ class BoardBridge(_Listener):
         old_ring = not s.info.fw or P.is_older(s.info.fw, P.SD_RING_FIX_FW)
         src = BoardSdSource("wdesp:" + s.info.name.lower(), s.info.name, post,
                             chunk=BoardSdSource.CHUNK if s.t.kind == "USB" else BoardSdSource.BLE_CHUNK,
-                            inflight=BoardSdSource.INFLIGHT if old_ring else BoardSdSource.INFLIGHT_MAX)
+                            inflight=BoardSdSource.INFLIGHT if old_ring else BoardSdSource.INFLIGHT_MAX,
+                            stream=s.t.kind != "USB" and not old_ring)
         src.count_as = s.info.key
         s.sd_src = src
         self._log(f"{s.info.name}: {n} offline run{'s' if n != 1 else ''} on its card")

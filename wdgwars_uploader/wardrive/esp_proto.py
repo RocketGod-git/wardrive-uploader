@@ -31,6 +31,8 @@ START = "wdstream start -wifi"
 
 MAGIC0, MAGIC1, VERSION, HEADER = 0x47, 0x42, 0x01, 12
 T_CMD, T_ACK, T_DATA, T_END, T_ERR = 1, 2, 3, 4, 5
+# 1.7.9+ `sd stream`: raw run bytes (id = file offset) and deflated pieces (id = piece offset, flags bit 0 = last).
+T_FILE, T_FILEZ = 6, 7
 FLAG_FIRST = 0x01
 
 LINK_END_NONE, LINK_END_RELEASED, LINK_END_LOST = 0, 1, 2
