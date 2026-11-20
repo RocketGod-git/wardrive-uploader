@@ -15,6 +15,28 @@ from typing import Any, Callable
 
 log = logging.getLogger("wdgwars.ble")
 
+# While a WardriveESP board copies its SD runs over Bluetooth, the PC's active scans stop: on Windows an active scan
+# takes the radio's time from every link, and a copy that ran at 55-160 KB/s with no scan crawled at 2-8 KB/s with one
+# (bench 2026-11-20). Counted, so two pauses need two resumes. The board's own scan is paused for the copy the same way.
+_pause_lock = threading.Lock()
+_pauses = 0
+
+
+def pause_scans() -> None:
+    global _pauses
+    with _pause_lock:
+        _pauses += 1
+
+
+def resume_scans() -> None:
+    global _pauses
+    with _pause_lock:
+        _pauses = max(0, _pauses - 1)
+
+
+def scans_paused() -> bool:
+    return _pauses > 0
+
 
 class BleScanner:
     def __init__(self, on_advert: Callable[[Any, Any], None] | None = None) -> None:
@@ -60,10 +82,15 @@ class BleScanner:
                     rec["name"] = prev["name"]       # names come in scan responses only
                 self._seen[rec["mac"]] = rec
 
-        async with BleakScanner(on_adv, scanning_mode="active"):
-            self.state, self.detail = "scanning", ""
-            while not self._stop.is_set():
-                await asyncio.sleep(1)
+        while not self._stop.is_set():
+            if scans_paused():   # a board is copying its SD runs (see pause_scans)
+                self.state, self.detail = "paused", "a board is sending its SD card"
+                await asyncio.sleep(0.5)
+                continue
+            async with BleakScanner(on_adv, scanning_mode="active"):
+                self.state, self.detail = "scanning", ""
+                while not self._stop.is_set() and not scans_paused():
+                    await asyncio.sleep(0.5)
 
     def fresh(self, max_age: float = 6.0) -> list[dict[str, Any]]:
         """Devices heard within ``max_age`` seconds; older ones are dropped."""

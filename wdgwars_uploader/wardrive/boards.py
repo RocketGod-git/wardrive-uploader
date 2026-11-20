@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from . import biscuit as BISC
+from . import ble as BLE
 from . import esp_proto as P
 from .capture import Hit
 from .gps import Fix
@@ -1233,6 +1234,10 @@ class BoardBridge(_Listener):
     def _maintain_fallback(self) -> None:
         now = _now()
         want = self.enabled and now - self.last_main_advert > FALLBACK_IDLE_S
+        if BLE.scans_paused():   # a board is copying over Bluetooth: no scan at all until it's done
+            if self._fallback is not None:
+                self._stop_fallback()
+            return
         if want and self._fallback is None and now - self._fallback_started > 30:
             self._fallback_started = now
             self.loop.create_task(self._run_fallback())
@@ -1799,10 +1804,17 @@ class BoardBridge(_Listener):
         def stop() -> bool:
             return not src.linked
 
+        paused = [False]
+
         def on_turn() -> None:
             # Our turn: stop the scan and give the board a moment to send what it had
             # queued, so its memory goes to the copy. Boards waiting their turn keep scanning.
             self.post(lambda: self._sd_pause(s))
+            # Over Bluetooth the PC's own scans stop too (they take the radio's time from the link): see ble.pause_scans.
+            if s.t.kind != "USB" and not paused[0]:
+                paused[0] = True
+                BLE.pause_scans()
+                self.post(self._maintain_fallback)
             time.sleep(2.0)
 
         def run() -> None:
@@ -1817,6 +1829,9 @@ class BoardBridge(_Listener):
             except Exception as e:  # noqa: BLE001
                 log.info("%s SD: %s", src.device_label, e)
             finally:
+                if paused[0]:
+                    paused[0] = False
+                    BLE.resume_scans()
                 sd.withdraw(src)
 
                 def done() -> None:
