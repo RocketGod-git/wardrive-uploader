@@ -364,14 +364,22 @@ class BoardSdSource:
     on the bridge thread, and the bridge puts every `WD:SD` line of this link in
     ``lines``."""
 
-    CHUNK = 640
-    INFLIGHT = 4
+    CHUNK = 640             # over USB: the reply line stays under the board's 1024-byte USB line cap
+    BLE_CHUNK = 768         # over Bluetooth: the most one `sd read` returns
+    INFLIGHT = 4            # firmware before 1.7.9 (see SD_RING_FIX_FW)
+    INFLIGHT_MAX = 6        # 1.7.9+: the board's command ring holds 6
     CHUNK_TIMEOUT_S = 5.0
+    # A read is asked again after 4 x the recent answer time, never sooner than this (a board waits up to 2 s for
+    # buffers before a reply goes out). Was a flat 5 s: every lost read stopped the copy for 5 s.
+    CHUNK_TIMEOUT_MIN_S = 2.5
     TRIES = 6
     DIR = "/runs/"
     next_time = "next link"
 
-    def __init__(self, device_key: str, device_label: str, post: Callable[[str], None]) -> None:
+    def __init__(self, device_key: str, device_label: str, post: Callable[[str], None],
+                 chunk: int = CHUNK, inflight: int = INFLIGHT) -> None:
+        self.chunk = chunk
+        self.inflight = inflight
         self.device_key = device_key
         self.device_label = device_label
         self._post = post
@@ -437,25 +445,29 @@ class BoardSdSource:
         ready: dict[int, bytes] = {}
         asked: dict[int, float] = {}
         tries: dict[int, int] = {}
+        lens: dict[int, int] = {}
         have = nxt = 0
+        rtt = 0.0           # recent answer time, smoothed
         on_bytes(0)
 
         def retry(off: int, why: str) -> None:
             tries[off] = tries.get(off, 0) + 1
             if tries[off] > self.TRIES:
                 raise OSError(f"{f.name}: chunk at {off} {why} {tries[off]} times")
-            if not self._send(f"sd read {f.name} {off} {self.CHUNK}"):
+            if not self._send(f"sd read {f.name} {off} {lens[off]}"):
                 raise OSError("link gone")
             asked[off] = time.monotonic()
 
         while have < f.size:
             if not self.linked:
                 raise OSError(f"link gone at {have} of {f.size} bytes")
-            while len(asked) < self.INFLIGHT and nxt < f.size:
-                if not self._send(f"sd read {f.name} {nxt} {self.CHUNK}"):
+            while len(asked) < self.inflight and nxt < f.size:
+                n = min(self.chunk, f.size - nxt)
+                if not self._send(f"sd read {f.name} {nxt} {n}"):
                     raise OSError("link gone")
                 asked[nxt] = time.monotonic()
-                nxt += self.CHUNK
+                lens[nxt] = n
+                nxt += n
             line = self._next(0.25)
             if line and line.startswith("WD:SD data "):
                 k = self._kv(line)
@@ -463,12 +475,15 @@ class BoardSdSource:
                     off = int(k.get("off", ""))
                 except ValueError:
                     off = -1
-                if k.get("name") == f.name and asked.pop(off, None) is not None:
+                at = asked.pop(off, None) if k.get("name") == f.name else None
+                if at is not None:
+                    d = time.monotonic() - at
+                    rtt = d if rtt == 0 else rtt * 0.8 + d * 0.2
                     try:
                         b = base64.b64decode(k.get("b64", ""))
                     except ValueError:
                         b = None
-                    want = min(self.CHUNK, f.size - off)
+                    want = lens[off]
                     try:
                         crc_ok = b is not None and int(k.get("crc", ""), 16) == zlib.crc32(b)
                     except ValueError:
@@ -480,8 +495,9 @@ class BoardSdSource:
             elif line and line.startswith("WD:SD err"):
                 raise OSError(line[6:])
             now = time.monotonic()
+            timeout = self.CHUNK_TIMEOUT_S if rtt == 0 else min(self.CHUNK_TIMEOUT_S, max(self.CHUNK_TIMEOUT_MIN_S, rtt * 4))
             for off, at in list(asked.items()):
-                if now - at > self.CHUNK_TIMEOUT_S:
+                if now - at > timeout:
                     del asked[off]
                     retry(off, "no answer")
             while have in ready:
@@ -1470,6 +1486,12 @@ class BoardBridge(_Listener):
     _DATA = ("WD:AP ", "WD:BT ", "WD:STATUS", "WD:CLIENT ", "WD:HS ", "WD:PMKID ", "WD:GPS ")
 
     def _parse_line(self, s: _Session, line: str) -> None:
+        # A frame lost from the middle of a line joins it to the next one. A copy's reply is the tail of such a line:
+        # hand that part to the copy, so only the damaged line before it is asked again.
+        j = line.rfind("WD:SD data ")
+        if j > 0 and s.sd_src is not None:
+            s.sd_src.lines.put(line[j:])
+            return
         if line.startswith("WD:SD "):
             # Offline runs: replies for the import taking them; file chunks stay out of the log.
             if s.sd_src is not None:
@@ -1644,7 +1666,10 @@ class BoardBridge(_Listener):
                 if self.sessions.get(sid) is s and s.ready:
                     s.t.send(command)
             self.post(send)
-        src = BoardSdSource("wdesp:" + s.info.name.lower(), s.info.name, post)
+        old_ring = not s.info.fw or P.is_older(s.info.fw, P.SD_RING_FIX_FW)
+        src = BoardSdSource("wdesp:" + s.info.name.lower(), s.info.name, post,
+                            chunk=BoardSdSource.CHUNK if s.t.kind == "USB" else BoardSdSource.BLE_CHUNK,
+                            inflight=BoardSdSource.INFLIGHT if old_ring else BoardSdSource.INFLIGHT_MAX)
         src.count_as = s.info.key
         s.sd_src = src
         self._log(f"{s.info.name}: {n} offline run{'s' if n != 1 else ''} on its card")

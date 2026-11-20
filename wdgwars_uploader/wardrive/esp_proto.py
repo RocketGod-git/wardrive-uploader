@@ -18,6 +18,9 @@ BEACON_COMPANY = 0xFFFF
 EXTRAS = "00005744-0000-1000-8000-00805f9b34fb"
 BYE_MIN_FW = "1.7.3"     # first firmware that takes `bye` and sends the advert extras
 IAM_MIN_FW = "1.6.5"     # first firmware that reads `iam` and sends the status beacon
+# First firmware whose command ring keeps every `sd read`: older boards overwrite a waiting command every 256
+# commands when 5 or more wait (bench 2026-11-20), so they get at most 4 reads in flight.
+SD_RING_FIX_FW = "1.7.9"
 HOLDER_MAX_BYTES = 18
 
 NAME_PREFIX = "WardriveESP"
